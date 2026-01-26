@@ -1,0 +1,45 @@
+# Binaries
+/vigil
+/vigil.exe
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Build output
+/bin/
+/dist/
+/build/
+
+# Go
+*.test
+*.out
+coverage.txt
+coverage.html
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+nul
+
+# Local data
+*.db
+*.sqlite
+*.sqlite3
+
+# Test artifacts
+/tmp/
+/test-output/
+
+# Dependency directories
+vendor/
+
+# Debug
+__debug_bin
