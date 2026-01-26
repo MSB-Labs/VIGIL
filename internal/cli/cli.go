@@ -3,7 +3,6 @@ package cli
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -682,29 +681,16 @@ func runBuildImage() {
 		os.Exit(1)
 	}
 
-	// Find Dockerfile
-	dockerfilePath := filepath.Join("docker", "Dockerfile")
-	if _, err := os.Stat(dockerfilePath); os.IsNotExist(err) {
-		// Try current directory
-		dockerfilePath = "Dockerfile"
-		if _, err := os.Stat(dockerfilePath); os.IsNotExist(err) {
-			fmt.Fprintf(os.Stderr, "Error: Dockerfile not found.\n")
-			fmt.Fprintf(os.Stderr, "Expected at: docker/Dockerfile\n")
-			os.Exit(1)
-		}
-	}
-
-	fmt.Printf("Building from: %s\n", dockerfilePath)
-	fmt.Println("This may take a few minutes...")
+	fmt.Println("Building sandbox image...")
 	fmt.Println()
 
-	if err := sandbox.BuildImage(dockerfilePath); err != nil {
+	if err := sandbox.BuildImageFromDefault(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 
 	fmt.Println()
-	fmt.Println("✓ Sandbox image built successfully!")
+	fmt.Println("Sandbox image built successfully!")
 	fmt.Println("  Image: vigil-sandbox:latest")
 	fmt.Println()
 	fmt.Println("═══════════════════════════════════════════════════════════")

@@ -6,7 +6,9 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -17,6 +19,18 @@ const (
 
 	// SandboxImage is the Docker image used for analysis
 	SandboxImage = "vigil-sandbox:latest"
+
+	// EmbeddedDockerfile is the built-in Dockerfile for the sandbox image
+	EmbeddedDockerfile = `FROM node:20-alpine
+RUN apk add --no-cache bash grep findutils coreutils
+RUN adduser -D -s /bin/bash vigil
+WORKDIR /home/vigil
+USER vigil
+ENV NPM_CONFIG_UPDATE_NOTIFIER=false
+ENV NPM_CONFIG_FUND=false
+ENV NO_UPDATE_NOTIFIER=1
+CMD ["/bin/bash"]
+`
 )
 
 // Sandbox manages Docker container lifecycle for package analysis
@@ -92,6 +106,22 @@ func BuildImage(dockerfilePath string) error {
 		return fmt.Errorf("failed to build sandbox image: %w\n%s", err, stderr.String())
 	}
 	return nil
+}
+
+// BuildImageFromDefault builds the sandbox image using the embedded Dockerfile
+func BuildImageFromDefault() error {
+	tmpDir, err := os.MkdirTemp("", "vigil-build-*")
+	if err != nil {
+		return fmt.Errorf("failed to create temp directory: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	dockerfilePath := filepath.Join(tmpDir, "Dockerfile")
+	if err := os.WriteFile(dockerfilePath, []byte(EmbeddedDockerfile), 0644); err != nil {
+		return fmt.Errorf("failed to write Dockerfile: %w", err)
+	}
+
+	return BuildImage(dockerfilePath)
 }
 
 // ImageExists checks if the sandbox image exists
