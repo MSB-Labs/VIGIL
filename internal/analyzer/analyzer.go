@@ -18,13 +18,13 @@ type Analyzer struct {
 
 // AnalysisReport contains the full analysis results
 type AnalysisReport struct {
-	PackageName   string
-	Version       string
-	RiskScore     int
-	RiskLevel     string
-	Matches       []*RuleMatch
-	Summary       *BehaviorSummary
-	Fingerprint   *store.BehaviorFingerprint
+	PackageName string
+	Version     string
+	RiskScore   int
+	RiskLevel   string
+	Matches     []*RuleMatch
+	Summary     *BehaviorSummary
+	Fingerprint *store.BehaviorFingerprint
 }
 
 // BehaviorSummary provides a quick overview of behaviors

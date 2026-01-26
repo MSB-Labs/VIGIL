@@ -23,14 +23,14 @@ const (
 
 // Rule defines a detection rule
 type Rule struct {
-	ID          string   `yaml:"id"`
-	Name        string   `yaml:"name"`
-	Description string   `yaml:"description"`
-	Severity    Severity `yaml:"severity"`
-	Category    string   `yaml:"category"`
-	Enabled     bool     `yaml:"enabled"`
+	ID          string      `yaml:"id"`
+	Name        string      `yaml:"name"`
+	Description string      `yaml:"description"`
+	Severity    Severity    `yaml:"severity"`
+	Category    string      `yaml:"category"`
+	Enabled     bool        `yaml:"enabled"`
 	Conditions  []Condition `yaml:"conditions"`
-	Tags        []string `yaml:"tags"`
+	Tags        []string    `yaml:"tags"`
 }
 
 // Condition defines what triggers a rule

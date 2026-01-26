@@ -10,13 +10,13 @@ import (
 
 // AnalyzeJSON is the JSON output for the analyze command
 type AnalyzeJSON struct {
-	Package   string                   `json:"package"`
-	Version   string                   `json:"version"`
-	RiskScore int                      `json:"risk_score"`
-	RiskLevel string                   `json:"risk_level"`
+	Package   string                    `json:"package"`
+	Version   string                    `json:"version"`
+	RiskScore int                       `json:"risk_score"`
+	RiskLevel string                    `json:"risk_level"`
 	Summary   *analyzer.BehaviorSummary `json:"summary"`
-	Matches   []RuleMatchJSON          `json:"matches"`
-	Duration  string                   `json:"duration"`
+	Matches   []RuleMatchJSON           `json:"matches"`
+	Duration  string                    `json:"duration"`
 }
 
 // RuleMatchJSON is a JSON-friendly rule match

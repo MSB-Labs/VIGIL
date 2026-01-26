@@ -32,8 +32,10 @@ If a "string formatting" library suddenly tries to read your AWS credentials, VI
 - **Dependency Resolution** - Parse `package.json` and resolve full dependency trees
 - **Sandboxed Execution** - Docker-based isolation for safe package analysis
 - **Behavioral Fingerprinting** - Capture and store behavioral profiles
-- **Rule-Based Detection** - YAML-configurable detection rules with severity levels
-- **Risk Scoring** - Quantified risk assessment (0-100)
+- **Rule-Based Detection** - 14 YAML-configurable detection rules with severity levels
+- **Risk Scoring** - Quantified risk assessment (0-100) with CRITICAL/HIGH/MEDIUM/LOW levels
+- **Batch Analysis** - Analyze all project dependencies in one command (`--analyze`)
+- **JSON Output** - Machine-readable output for CI/CD pipelines (`--json`)
 - **Local Database** - SQLite storage for analyzed packages (no cloud dependency)
 
 ## Installation
@@ -204,8 +206,18 @@ Use "vigil [command] --help" for more information about a command.
 vigil scan [path] [flags]
 
 Flags:
-  --dev          Include dev dependencies
-  --depth int    Maximum dependency tree depth (default 5)
+  --dev            Include dev dependencies
+  --depth int      Maximum dependency tree depth (default 5)
+  --analyze        Analyze all unanalyzed packages in the sandbox
+  --timeout int    Analysis timeout per package in seconds (default 60)
+  --json           Output results as JSON
+
+Examples:
+  vigil scan                         Scan current directory
+  vigil scan /path/to/project        Scan specific project
+  vigil scan . --dev                 Include dev dependencies
+  vigil scan . --analyze             Scan and analyze all packages
+  vigil scan . --json                Output as JSON for CI/CD
 ```
 
 ### Analyze Options
@@ -214,13 +226,15 @@ Flags:
 vigil analyze <package>[@version] [flags]
 
 Flags:
-  --timeout int   Analysis timeout in seconds (default 60)
+  -t, --timeout int   Analysis timeout in seconds (default 60)
+  --json              Output results as JSON
 
 Examples:
   vigil analyze lodash
   vigil analyze lodash@4.17.21
   vigil analyze @types/node
   vigil analyze express --timeout 120
+  vigil analyze lodash --json
 ```
 
 ## Detection Rules
@@ -314,32 +328,65 @@ rules:
 vigil/
 ├── cmd/
 │   └── vigil/
-│       └── main.go           # Entry point
+│       └── main.go              # Entry point
 ├── internal/
 │   ├── cli/
-│   │   └── cli.go            # CLI commands
+│   │   ├── cli.go               # CLI commands
+│   │   ├── cli_test.go          # CLI tests
+│   │   └── output.go            # JSON output structs
 │   ├── resolver/
-│   │   ├── resolver.go       # Package.json parser
-│   │   ├── npm.go            # npm registry client
-│   │   └── tree.go           # Dependency tree resolver
+│   │   ├── resolver.go          # Package.json parser
+│   │   ├── resolver_test.go     # Resolver tests
+│   │   ├── npm.go               # npm registry client
+│   │   ├── npm_test.go          # NPM client tests
+│   │   ├── tree.go              # Dependency tree resolver
+│   │   └── tree_test.go         # Tree tests
 │   ├── sandbox/
-│   │   └── sandbox.go        # Docker sandbox manager
+│   │   ├── sandbox.go           # Docker sandbox manager
+│   │   └── sandbox_test.go      # Sandbox tests
 │   ├── analyzer/
-│   │   ├── analyzer.go       # Analysis engine
-│   │   ├── rules.go          # Rule parser and matcher
-│   │   └── default_rules.go  # Built-in rules
+│   │   ├── analyzer.go          # Analysis engine
+│   │   ├── analyzer_test.go     # Analyzer tests
+│   │   ├── integration_test.go  # Attack scenario tests
+│   │   ├── rules.go             # Rule parser and matcher
+│   │   ├── rules_test.go        # Rule engine tests
+│   │   └── default_rules.go     # Built-in 14 rules
 │   ├── store/
-│   │   └── store.go          # SQLite fingerprint store
+│   │   ├── store.go             # SQLite fingerprint store
+│   │   └── store_test.go        # Store tests
 │   └── collector/
-│       └── collector.go      # (Future: advanced collection)
+│       └── collector.go         # (Future: advanced collection)
 ├── docker/
-│   └── Dockerfile            # Sandbox image
+│   └── Dockerfile               # Sandbox image
 ├── rules/
-│   └── default.yaml          # Default detection rules
+│   └── default.yaml             # Default detection rules
 ├── go.mod
 ├── go.sum
 └── README.md
 ```
+
+## Testing
+
+Run the full test suite:
+
+```bash
+go test ./... -v
+```
+
+Run tests for a specific package:
+
+```bash
+go test ./internal/analyzer/... -v
+go test ./internal/resolver/... -v
+go test ./internal/store/... -v
+```
+
+The test suite covers:
+- **Analyzer** - Rule parsing, condition evaluation, risk scoring, attack scenario detection
+- **Resolver** - Package.json parsing, NPM client (mock HTTP), dependency tree
+- **Store** - SQLite CRUD operations, upsert, queries (temp databases)
+- **Sandbox** - Output parsing, configuration
+- **CLI** - Package argument parsing
 
 ## Roadmap
 
@@ -358,12 +405,6 @@ vigil/
 ## Contributing
 
 Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-## Prior Art
-
-- [Socket.dev](https://socket.dev/) - Commercial behavioral analysis
-- [Sandworm](https://github.com/nicolo-ribaudo/sandworm) - JS permissions tracking
-- [Packj](https://github.com/ossillate-inc/packj) - Static + dynamic analysis
 
 ## License
 

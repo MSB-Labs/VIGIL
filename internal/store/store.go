@@ -26,11 +26,11 @@ type BehaviorFingerprint struct {
 	Version         string    `json:"version"`
 	Ecosystem       string    `json:"ecosystem"` // npm, pypi, etc.
 	AnalyzedAt      time.Time `json:"analyzed_at"`
-	NetworkCalls    []string  `json:"network_calls"`    // hosts contacted
-	FileReads       []string  `json:"file_reads"`       // paths read
-	FileWrites      []string  `json:"file_writes"`      // paths written
-	EnvVarsRead     []string  `json:"env_vars_read"`    // env vars accessed
-	ShellCommands   []string  `json:"shell_commands"`   // commands executed
+	NetworkCalls    []string  `json:"network_calls"`  // hosts contacted
+	FileReads       []string  `json:"file_reads"`     // paths read
+	FileWrites      []string  `json:"file_writes"`    // paths written
+	EnvVarsRead     []string  `json:"env_vars_read"`  // env vars accessed
+	ShellCommands   []string  `json:"shell_commands"` // commands executed
 	HasInstallHooks bool      `json:"has_install_hooks"`
 	DynamicCodeExec bool      `json:"dynamic_code_exec"` // eval, new Function, etc.
 	RiskScore       int       `json:"risk_score"`        // 0-100
@@ -243,11 +243,11 @@ func (s *Store) GetHighRiskPackages(minRiskScore int) ([]*BehaviorFingerprint, e
 
 // Stats returns database statistics
 type Stats struct {
-	TotalPackages   int
-	TotalVersions   int
-	HighRiskCount   int
+	TotalPackages    int
+	TotalVersions    int
+	HighRiskCount    int
 	WithInstallHooks int
-	LastAnalyzed    time.Time
+	LastAnalyzed     time.Time
 }
 
 // GetStats returns statistics about the fingerprint database

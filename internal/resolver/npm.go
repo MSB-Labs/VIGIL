@@ -17,12 +17,12 @@ type NPMClient struct {
 
 // NPMPackageInfo represents package metadata from npm registry
 type NPMPackageInfo struct {
-	Name        string                        `json:"name"`
-	Description string                        `json:"description"`
-	DistTags    map[string]string             `json:"dist-tags"`
-	Versions    map[string]NPMVersionInfo     `json:"versions"`
-	Time        map[string]string             `json:"time"` // version -> publish timestamp
-	Maintainers []NPMMaintainer               `json:"maintainers"`
+	Name        string                    `json:"name"`
+	Description string                    `json:"description"`
+	DistTags    map[string]string         `json:"dist-tags"`
+	Versions    map[string]NPMVersionInfo `json:"versions"`
+	Time        map[string]string         `json:"time"` // version -> publish timestamp
+	Maintainers []NPMMaintainer           `json:"maintainers"`
 }
 
 // NPMVersionInfo represents a specific version's metadata
