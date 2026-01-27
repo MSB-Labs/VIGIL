@@ -2,8 +2,11 @@ package resolver
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
+
+	semver "github.com/Masterminds/semver/v3"
 )
 
 // ResolvedPackage contains full info about a resolved dependency
@@ -17,10 +20,19 @@ type ResolvedPackage struct {
 	Dependencies    map[string]string
 }
 
+// SkippedDependency records a dependency that was skipped during resolution
+type SkippedDependency struct {
+	Name      string
+	Specifier string
+	Reason    string
+	Parent    string
+}
+
 // TreeResolver resolves the full dependency tree
 type TreeResolver struct {
 	client   *NPMClient
 	resolved map[string]*ResolvedPackage // name@version -> package
+	skipped  []SkippedDependency
 	mu       sync.Mutex
 	maxDepth int
 }
@@ -59,10 +71,39 @@ func (r *TreeResolver) Resolve(projectPath string, includeDevDeps bool) ([]*Reso
 	return result, nil
 }
 
+// ResolveFromDependencies resolves a dependency tree from a pre-built list of dependencies
+func (r *TreeResolver) ResolveFromDependencies(deps []Dependency) ([]*ResolvedPackage, error) {
+	for _, dep := range deps {
+		if err := r.resolveDependency(dep.Name, dep.Version, dep.Parent, 1); err != nil {
+			fmt.Printf("Warning: failed to resolve %s: %v\n", dep.Name, err)
+		}
+	}
+
+	result := make([]*ResolvedPackage, 0, len(r.resolved))
+	for _, pkg := range r.resolved {
+		result = append(result, pkg)
+	}
+
+	return result, nil
+}
+
 // resolveDependency recursively resolves a single dependency
 func (r *TreeResolver) resolveDependency(name, versionConstraint, parent string, depth int) error {
 	if depth > r.maxDepth {
 		return nil // stop at max depth
+	}
+
+	// Check for non-registry specifiers before attempting resolution
+	if isNonRegistrySpecifier(versionConstraint) {
+		r.mu.Lock()
+		r.skipped = append(r.skipped, SkippedDependency{
+			Name:      name,
+			Specifier: versionConstraint,
+			Reason:    "non-registry specifier",
+			Parent:    parent,
+		})
+		r.mu.Unlock()
+		return nil
 	}
 
 	// Resolve version constraint to actual version
@@ -112,32 +153,118 @@ func (r *TreeResolver) resolveDependency(name, versionConstraint, parent string,
 
 // resolveVersion converts a version constraint to an actual version
 func (r *TreeResolver) resolveVersion(name, constraint string) (string, error) {
-	// Handle exact versions
-	if !strings.ContainsAny(constraint, "^~><=*x") {
-		return constraint, nil
-	}
-
-	// Handle "latest" tag
-	if constraint == "latest" || constraint == "*" {
+	// Handle "latest" tag or empty constraint
+	if constraint == "latest" || constraint == "*" || constraint == "" {
 		return r.client.GetLatestVersion(name)
 	}
 
-	// For semver ranges (^, ~, etc.), fetch the package and find matching version
-	// For MVP, we'll just get the latest version that satisfies the constraint
-	// A full implementation would use a semver library
+	// Only accept full X.Y.Z (2+ dots, no wildcards) as exact version.
+	// Bare versions like "1", "0.3" are partial and must be treated as ranges.
+	if strings.Count(constraint, ".") >= 2 && !strings.ContainsAny(constraint, "xX*") {
+		if _, err := semver.NewVersion(constraint); err == nil {
+			return constraint, nil
+		}
+	}
 
+	// Check if this looks like a semver range
+	trimmed := strings.TrimSpace(constraint)
+	isRange := strings.ContainsAny(trimmed, "^~><=|") ||
+		trimmed == "*" ||
+		strings.Contains(trimmed, " ") ||
+		strings.Contains(trimmed, ".x") ||
+		strings.Contains(trimmed, ".X")
+
+	// Bare/partial versions like "1", "0.3", "2" should be treated as ranges.
+	// In npm, "1" means >=1.0.0 <2.0.0, "0.3" means >=0.3.0 <0.4.0.
+	if !isRange && isPartialVersion(trimmed) {
+		constraint = "~" + trimmed
+		isRange = true
+	}
+
+	if !isRange {
+		// Not a range — treat as dist-tag (e.g., "next", "beta", "canary")
+		return constraint, nil
+	}
+
+	// Parse the semver constraint
+	c, err := semver.NewConstraint(constraint)
+	if err != nil {
+		// Constraint parsing failed — fall back to latest
+		fmt.Printf("Warning: could not parse constraint %q for %s, using latest\n", constraint, name)
+		return r.client.GetLatestVersion(name)
+	}
+
+	// Fetch all available versions from npm registry
 	info, err := r.client.GetPackageInfo(name)
 	if err != nil {
 		return "", err
 	}
 
-	// Simple approach for MVP: use the latest dist-tag
-	// In production, this should properly resolve semver ranges
-	if latest, ok := info.DistTags["latest"]; ok {
-		return latest, nil
+	// Collect versions that satisfy the constraint
+	var matching []*semver.Version
+	for vStr := range info.Versions {
+		v, err := semver.NewVersion(vStr)
+		if err != nil {
+			continue
+		}
+		// Skip prereleases unless the constraint explicitly mentions one
+		if v.Prerelease() != "" && !strings.ContainsAny(constraint, "-") {
+			continue
+		}
+		if c.Check(v) {
+			matching = append(matching, v)
+		}
 	}
 
-	return "", fmt.Errorf("could not resolve version %s for %s", constraint, name)
+	if len(matching) == 0 {
+		// No version satisfies — fall back to latest dist-tag
+		if latest, ok := info.DistTags["latest"]; ok {
+			return latest, nil
+		}
+		return "", fmt.Errorf("no version satisfies %s for %s", constraint, name)
+	}
+
+	// Sort descending, pick the highest matching version
+	sort.Sort(sort.Reverse(semver.Collection(matching)))
+	return matching[0].Original(), nil
+}
+
+// isNonRegistrySpecifier returns true for version specifiers that cannot
+// be resolved against the npm registry.
+func isNonRegistrySpecifier(constraint string) bool {
+	prefixes := []string{
+		"catalog:",
+		"workspace:",
+		"npm:",
+		"git+",
+		"git://",
+		"github:",
+		"file:",
+		"link:",
+		"http://",
+		"https://",
+	}
+	lower := strings.ToLower(constraint)
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(lower, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// isPartialVersion returns true for bare numeric versions like "1", "0.3", "2"
+// that npm treats as ranges (e.g., "1" = >=1.0.0 <2.0.0) rather than exact versions.
+func isPartialVersion(s string) bool {
+	if strings.Count(s, ".") > 1 {
+		return false // full X.Y.Z — not partial
+	}
+	for _, c := range s {
+		if c != '.' && (c < '0' || c > '9') {
+			return false
+		}
+	}
+	return len(s) > 0
 }
 
 // GetResolved returns all resolved packages
@@ -153,13 +280,24 @@ func (r *TreeResolver) GetResolved() map[string]*ResolvedPackage {
 	return result
 }
 
-// Summary returns a summary of the resolved tree
+// GetSkipped returns all skipped dependencies
+func (r *TreeResolver) GetSkipped() []SkippedDependency {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	result := make([]SkippedDependency, len(r.skipped))
+	copy(result, r.skipped)
+	return result
+}
+
+// TreeSummary holds statistics about the resolved tree
 type TreeSummary struct {
 	TotalPackages    int
 	DirectDeps       int
 	TransitiveDeps   int
 	WithInstallHooks int
 	MaxDepth         int
+	SkippedCount     int
 }
 
 // GetSummary returns statistics about the resolved tree
@@ -169,6 +307,7 @@ func (r *TreeResolver) GetSummary() TreeSummary {
 
 	summary := TreeSummary{}
 	summary.TotalPackages = len(r.resolved)
+	summary.SkippedCount = len(r.skipped)
 
 	for _, pkg := range r.resolved {
 		if pkg.Depth == 1 {

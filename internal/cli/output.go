@@ -31,13 +31,24 @@ type RuleMatchJSON struct {
 
 // ScanJSON is the JSON output for the scan command
 type ScanJSON struct {
-	Project       string            `json:"project"`
-	TotalPackages int               `json:"total_packages"`
-	Analyzed      int               `json:"analyzed"`
-	NeedsAnalysis int               `json:"needs_analysis"`
-	RiskBreakdown RiskBreakdownJSON `json:"risk_breakdown"`
-	HighRisk      []PackageRiskJSON `json:"high_risk,omitempty"`
-	InstallHooks  []string          `json:"install_hooks,omitempty"`
+	Project           string            `json:"project"`
+	IsWorkspace       bool              `json:"is_workspace,omitempty"`
+	WorkspacePackages []string          `json:"workspace_packages,omitempty"`
+	AutoIncludedDev   bool              `json:"auto_included_dev,omitempty"`
+	TotalPackages     int               `json:"total_packages"`
+	Analyzed          int               `json:"analyzed"`
+	NeedsAnalysis     int               `json:"needs_analysis"`
+	RiskBreakdown     RiskBreakdownJSON `json:"risk_breakdown"`
+	HighRisk          []PackageRiskJSON `json:"high_risk,omitempty"`
+	InstallHooks      []string          `json:"install_hooks,omitempty"`
+	Skipped           []SkippedJSON     `json:"skipped,omitempty"`
+}
+
+// SkippedJSON represents a skipped dependency in JSON output
+type SkippedJSON struct {
+	Name      string `json:"name"`
+	Specifier string `json:"specifier"`
+	Reason    string `json:"reason"`
 }
 
 // RiskBreakdownJSON shows the risk distribution
