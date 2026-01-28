@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/MSB-Labs/vigil/internal/colorutil"
 	"github.com/MSB-Labs/vigil/internal/sandbox"
 	"github.com/MSB-Labs/vigil/internal/store"
 )
@@ -144,7 +145,8 @@ func (r *AnalysisReport) FormatReport() string {
 	var sb strings.Builder
 
 	sb.WriteString(fmt.Sprintf("Package: %s@%s\n", r.PackageName, r.Version))
-	sb.WriteString(fmt.Sprintf("Risk Score: %d/100 [%s]\n\n", r.RiskScore, r.RiskLevel))
+	sb.WriteString(fmt.Sprintf("Risk Score: %d/100 [%s]\n\n", r.RiskScore,
+		colorutil.ColorizeRiskLevel(r.RiskLevel)))
 
 	// Summary
 	sb.WriteString("Behavior Summary:\n")
@@ -160,7 +162,8 @@ func (r *AnalysisReport) FormatReport() string {
 		sb.WriteString("Triggered Rules:\n")
 		for _, match := range r.Matches {
 			icon := severityIcon(match.Rule.Severity)
-			sb.WriteString(fmt.Sprintf("  %s [%s] %s\n", icon, match.Rule.Severity, match.Rule.Name))
+			sb.WriteString(fmt.Sprintf("  %s [%s] %s\n", icon,
+				colorutil.ColorizeSeverity(string(match.Rule.Severity)), match.Rule.Name))
 			sb.WriteString(fmt.Sprintf("     %s\n", match.Rule.Description))
 			if len(match.MatchedData) > 0 && len(match.MatchedData) <= 5 {
 				for _, data := range match.MatchedData {

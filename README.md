@@ -195,6 +195,7 @@ Available Commands:
 
 Flags:
   --db string   Path to fingerprint database (default "~/.vigil/fingerprints.db")
+  --no-color    Disable colored output
   -h, --help    help for vigil
 
 Use "vigil [command] --help" for more information about a command.
