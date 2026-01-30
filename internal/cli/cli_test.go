@@ -63,3 +63,28 @@ func TestParsePackageArg_VersionRange(t *testing.T) {
 		t.Errorf("version = %q, want %q", version, "^4.0.0")
 	}
 }
+
+func TestParallelFlag_DefaultValue(t *testing.T) {
+	f := scanCmd.Flags().Lookup("parallel")
+	if f == nil {
+		t.Fatal("--parallel flag not registered on scan command")
+	}
+	if f.DefValue != "4" {
+		t.Errorf("default = %q, want %q", f.DefValue, "4")
+	}
+}
+
+func TestParallelFlag_ParsesValue(t *testing.T) {
+	f := scanCmd.Flags().Lookup("parallel")
+	if f == nil {
+		t.Fatal("--parallel flag not registered on scan command")
+	}
+	if err := f.Value.Set("8"); err != nil {
+		t.Fatalf("failed to set --parallel to 8: %v", err)
+	}
+	if f.Value.String() != "8" {
+		t.Errorf("value = %q, want %q", f.Value.String(), "8")
+	}
+	// Reset to default for other tests
+	f.Value.Set("4")
+}
