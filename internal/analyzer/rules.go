@@ -221,7 +221,7 @@ func (rs *RuleSet) evaluateCondition(cond Condition, data *BehaviorData) (bool, 
 	case "count_gt":
 		// Value should be a number string
 		var threshold int
-		fmt.Sscanf(cond.Value, "%d", &threshold)
+		_, _ = fmt.Sscanf(cond.Value, "%d", &threshold)
 		if len(targetData) > threshold {
 			return true, targetData
 		}

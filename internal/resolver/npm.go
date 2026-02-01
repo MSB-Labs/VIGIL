@@ -54,16 +54,26 @@ func NewNPMClient() *NPMClient {
 	return &NPMClient{
 		baseURL: npmRegistryURL,
 		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout: 60 * time.Second,
 		},
 	}
 }
 
-// GetPackageInfo fetches full package metadata from npm
+// GetPackageInfo fetches package metadata from npm using the abbreviated
+// metadata format, which is much smaller than the full response (critical for
+// packages like @types/node that have thousands of versions).
 func (c *NPMClient) GetPackageInfo(packageName string) (*NPMPackageInfo, error) {
-	url := fmt.Sprintf("%s/%s", c.baseURL, packageName)
+	reqURL := fmt.Sprintf("%s/%s", c.baseURL, packageName)
 
-	resp, err := c.httpClient.Get(url)
+	req, err := http.NewRequest("GET", reqURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request for %s: %w", packageName, err)
+	}
+	// Abbreviated metadata: returns only version keys, dist-tags, and deps.
+	// Reduces payload from ~20MB to ~200KB for large packages.
+	req.Header.Set("Accept", "application/vnd.npm.install-v1+json")
+
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch package %s: %w", packageName, err)
 	}
@@ -111,19 +121,14 @@ func (c *NPMClient) GetVersionInfo(packageName, version string) (*NPMVersionInfo
 	return &info, nil
 }
 
-// GetLatestVersion returns the latest version tag
+// GetLatestVersion returns the latest version tag by fetching only that
+// specific version instead of downloading the full package metadata.
 func (c *NPMClient) GetLatestVersion(packageName string) (string, error) {
-	info, err := c.GetPackageInfo(packageName)
+	info, err := c.GetVersionInfo(packageName, "latest")
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("no latest version found for %s: %w", packageName, err)
 	}
-
-	latest, ok := info.DistTags["latest"]
-	if !ok {
-		return "", fmt.Errorf("no latest tag found for %s", packageName)
-	}
-
-	return latest, nil
+	return info.Version, nil
 }
 
 // HasPostInstallScript checks if a version has install scripts (security risk indicator)

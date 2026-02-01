@@ -185,11 +185,36 @@ func runScan(projectPath string) {
 		os.Exit(1)
 	}
 
+	// Auto-include devDeps when no direct dependencies exist
+	autoIncludedDevDeps := false
+	if len(pkg.Dependencies) == 0 && len(pkg.DevDependencies) > 0 && !includeDevDeps {
+		includeDevDeps = true
+		autoIncludedDevDeps = true
+	}
+
+	// Detect workspaces
+	wsInfo, _ := resolver.DetectWorkspaces(projectPath)
+	isWorkspace := wsInfo != nil
+
 	if !jsonOutput {
 		fmt.Printf("Project: %s\n", pkg.Name)
 		fmt.Printf("Version: %s\n", pkg.Version)
 		fmt.Printf("Direct dependencies: %d\n", len(pkg.Dependencies))
-		fmt.Printf("Dev dependencies: %d\n\n", len(pkg.DevDependencies))
+		fmt.Printf("Dev dependencies: %d\n", len(pkg.DevDependencies))
+		if autoIncludedDevDeps {
+			fmt.Printf("\n  [i] No direct dependencies found. Auto-including %d dev dependencies.\n", len(pkg.DevDependencies))
+		}
+		if isWorkspace {
+			fmt.Printf("\n  Workspace detected: %d packages\n", len(wsInfo.Packages))
+			for _, ws := range wsInfo.Packages {
+				name := ws.PackageJSON.Name
+				if name == "" {
+					name = ws.Path
+				}
+				fmt.Printf("    - %s (%s)\n", name, ws.Path)
+			}
+		}
+		fmt.Println()
 	}
 
 	// Resolve dependency tree
@@ -198,7 +223,14 @@ func runScan(projectPath string) {
 	}
 
 	treeResolver := resolver.NewTreeResolver(maxDepth)
-	packages, err := treeResolver.Resolve(projectPath, includeDevDeps)
+	var packages []*resolver.ResolvedPackage
+
+	if isWorkspace {
+		externalDeps := wsInfo.GetExternalDependencies(includeDevDeps)
+		packages, err = treeResolver.ResolveFromDependencies(externalDeps)
+	} else {
+		packages, err = treeResolver.Resolve(projectPath, includeDevDeps)
+	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error resolving dependencies: %v\n", err)
 		os.Exit(1)
@@ -238,10 +270,31 @@ func runScan(projectPath string) {
 	// JSON output path
 	if jsonOutput {
 		scanJSON := ScanJSON{
-			Project:       pkg.Name,
-			TotalPackages: len(packages),
-			Analyzed:      cached,
-			NeedsAnalysis: needsAnalysis,
+			Project:         pkg.Name,
+			TotalPackages:   len(packages),
+			Analyzed:        cached,
+			NeedsAnalysis:   needsAnalysis,
+			AutoIncludedDev: autoIncludedDevDeps,
+			IsWorkspace:     isWorkspace,
+		}
+
+		if isWorkspace {
+			for _, ws := range wsInfo.Packages {
+				name := ws.PackageJSON.Name
+				if name == "" {
+					name = ws.Path
+				}
+				scanJSON.WorkspacePackages = append(scanJSON.WorkspacePackages, name)
+			}
+		}
+
+		jsonSkipped := treeResolver.GetSkipped()
+		for _, s := range jsonSkipped {
+			scanJSON.Skipped = append(scanJSON.Skipped, SkippedJSON{
+				Name:      s.Name,
+				Specifier: s.Specifier,
+				Reason:    s.Reason,
+			})
 		}
 
 		// Risk breakdown from cached results
@@ -359,6 +412,18 @@ func runScan(projectPath string) {
 		fmt.Println()
 	}
 
+	// Show skipped packages (non-registry specifiers)
+	skipped := treeResolver.GetSkipped()
+	if len(skipped) > 0 {
+		fmt.Println("───────────────────────────────────────────────────────────")
+		fmt.Printf("  Skipped (non-registry specifiers): %d\n", len(skipped))
+		fmt.Println("───────────────────────────────────────────────────────────")
+		for _, s := range skipped {
+			fmt.Printf("  - %s: %s\n", s.Name, s.Specifier)
+		}
+		fmt.Println()
+	}
+
 	// Auto-analyze if requested
 	if analyzeAll && needsAnalysis > 0 && db != nil {
 		runBatchAnalyze(db, packages)
@@ -366,13 +431,17 @@ func runScan(projectPath string) {
 
 	elapsed := time.Since(scanStart)
 	fmt.Println("═══════════════════════════════════════════════════════════")
-	if analyzeAll && needsAnalysis > 0 {
-		fmt.Printf("  Scan complete. Duration: %v\n", elapsed.Round(time.Second))
+	if len(packages) == 0 {
+		fmt.Println("  Scan complete. No packages found to analyze.")
+	} else if analyzeAll && needsAnalysis > 0 {
+		fmt.Printf("  Scan complete. %d packages resolved.\n", len(packages))
 	} else if needsAnalysis > 0 {
-		fmt.Println("  Scan complete. Run 'vigil scan --analyze' for full analysis.")
+		fmt.Printf("  Scan complete. %d packages resolved, %d need analysis.\n", len(packages), needsAnalysis)
+		fmt.Println("  Run 'vigil scan --analyze' for full analysis.")
 	} else {
-		fmt.Println("  Scan complete. All packages analyzed.")
+		fmt.Printf("  Scan complete. All %d packages analyzed.\n", len(packages))
 	}
+	fmt.Printf("  Duration: %v\n", elapsed.Round(time.Second))
 	fmt.Println("═══════════════════════════════════════════════════════════")
 }
 
