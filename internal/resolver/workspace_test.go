@@ -57,7 +57,7 @@ func TestParsePackageJSON_WithWorkspaces(t *testing.T) {
 		"workspaces": ["packages/*"],
 		"devDependencies": {"typescript": "^5.0.0"}
 	}`
-	os.WriteFile(filepath.Join(dir, "package.json"), []byte(pkgData), 0644)
+	_ = os.WriteFile(filepath.Join(dir, "package.json"), []byte(pkgData), 0644)
 
 	pkg, err := ParsePackageJSON(dir)
 	if err != nil {
@@ -74,7 +74,7 @@ func TestParsePackageJSON_WithWorkspaces(t *testing.T) {
 func TestDetectWorkspaces_NotAWorkspace(t *testing.T) {
 	dir := t.TempDir()
 	pkgData := `{"name": "simple-app", "version": "1.0.0", "dependencies": {"lodash": "^4.0.0"}}`
-	os.WriteFile(filepath.Join(dir, "package.json"), []byte(pkgData), 0644)
+	_ = os.WriteFile(filepath.Join(dir, "package.json"), []byte(pkgData), 0644)
 
 	wsInfo, err := DetectWorkspaces(dir)
 	if err != nil {
@@ -95,21 +95,21 @@ func TestDetectWorkspaces_WithNpmWorkspaces(t *testing.T) {
 		"workspaces": ["packages/*"],
 		"devDependencies": {"typescript": "^5.0.0"}
 	}`
-	os.WriteFile(filepath.Join(dir, "package.json"), []byte(rootPkg), 0644)
+	_ = os.WriteFile(filepath.Join(dir, "package.json"), []byte(rootPkg), 0644)
 
 	// Create workspace package: packages/core
 	coreDir := filepath.Join(dir, "packages", "core")
-	os.MkdirAll(coreDir, 0755)
+	_ = os.MkdirAll(coreDir, 0755)
 	corePkg := `{
 		"name": "@myorg/core",
 		"version": "1.0.0",
 		"dependencies": {"lodash": "^4.17.21"}
 	}`
-	os.WriteFile(filepath.Join(coreDir, "package.json"), []byte(corePkg), 0644)
+	_ = os.WriteFile(filepath.Join(coreDir, "package.json"), []byte(corePkg), 0644)
 
 	// Create workspace package: packages/cli
 	cliDir := filepath.Join(dir, "packages", "cli")
-	os.MkdirAll(cliDir, 0755)
+	_ = os.MkdirAll(cliDir, 0755)
 	cliPkg := `{
 		"name": "@myorg/cli",
 		"version": "1.0.0",
@@ -118,7 +118,7 @@ func TestDetectWorkspaces_WithNpmWorkspaces(t *testing.T) {
 			"commander": "^11.0.0"
 		}
 	}`
-	os.WriteFile(filepath.Join(cliDir, "package.json"), []byte(cliPkg), 0644)
+	_ = os.WriteFile(filepath.Join(cliDir, "package.json"), []byte(cliPkg), 0644)
 
 	wsInfo, err := DetectWorkspaces(dir)
 	if err != nil {
@@ -148,17 +148,17 @@ func TestDetectWorkspaces_PnpmWorkspaceYaml(t *testing.T) {
 
 	// Root package.json WITHOUT workspaces field
 	rootPkg := `{"name": "pnpm-monorepo", "version": "1.0.0"}`
-	os.WriteFile(filepath.Join(dir, "package.json"), []byte(rootPkg), 0644)
+	_ = os.WriteFile(filepath.Join(dir, "package.json"), []byte(rootPkg), 0644)
 
 	// pnpm-workspace.yaml
 	pnpmWs := "packages:\n  - 'packages/*'\n"
-	os.WriteFile(filepath.Join(dir, "pnpm-workspace.yaml"), []byte(pnpmWs), 0644)
+	_ = os.WriteFile(filepath.Join(dir, "pnpm-workspace.yaml"), []byte(pnpmWs), 0644)
 
 	// Create a workspace package
 	pkgDir := filepath.Join(dir, "packages", "utils")
-	os.MkdirAll(pkgDir, 0755)
+	_ = os.MkdirAll(pkgDir, 0755)
 	utilsPkg := `{"name": "@myorg/utils", "version": "1.0.0", "dependencies": {"zod": "^3.0.0"}}`
-	os.WriteFile(filepath.Join(pkgDir, "package.json"), []byte(utilsPkg), 0644)
+	_ = os.WriteFile(filepath.Join(pkgDir, "package.json"), []byte(utilsPkg), 0644)
 
 	wsInfo, err := DetectWorkspaces(dir)
 	if err != nil {
