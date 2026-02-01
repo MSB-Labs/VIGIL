@@ -35,8 +35,7 @@ CMD ["/bin/bash"]
 
 // Sandbox manages Docker container lifecycle for package analysis
 type Sandbox struct {
-	containerID string
-	timeout     time.Duration
+	timeout time.Duration
 }
 
 // Config holds sandbox configuration

@@ -21,7 +21,7 @@ func TestParsePackageJSON_Valid(t *testing.T) {
 		},
 	}
 	data, _ := json.Marshal(pkg)
-	os.WriteFile(filepath.Join(dir, "package.json"), data, 0644)
+	_ = os.WriteFile(filepath.Join(dir, "package.json"), data, 0644)
 
 	result, err := ParsePackageJSON(dir)
 	if err != nil {
@@ -54,7 +54,7 @@ func TestParsePackageJSON_NotFound(t *testing.T) {
 
 func TestParsePackageJSON_InvalidJSON(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "package.json"), []byte("{invalid json}"), 0644)
+	_ = os.WriteFile(filepath.Join(dir, "package.json"), []byte("{invalid json}"), 0644)
 
 	_, err := ParsePackageJSON(dir)
 	if err == nil {
@@ -64,7 +64,7 @@ func TestParsePackageJSON_InvalidJSON(t *testing.T) {
 
 func TestParsePackageJSON_MinimalValid(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"name":"minimal","version":"0.0.1"}`), 0644)
+	_ = os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"name":"minimal","version":"0.0.1"}`), 0644)
 
 	result, err := ParsePackageJSON(dir)
 	if err != nil {
