@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/MSB-Labs/vigil/internal/analyzer"
+	"github.com/MSB-Labs/vigil/internal/colorutil"
 	"github.com/MSB-Labs/vigil/internal/resolver"
 	"github.com/MSB-Labs/vigil/internal/sandbox"
 	"github.com/MSB-Labs/vigil/internal/store"
@@ -22,6 +23,7 @@ var (
 	timeout        int
 	analyzeAll     bool
 	jsonOutput     bool
+	noColor        bool
 )
 
 var rootCmd = &cobra.Command{
@@ -148,6 +150,10 @@ The image will be tagged as 'vigil-sandbox:latest'.`,
 
 func runScan(projectPath string) {
 	scanStart := time.Now()
+
+	if noColor {
+		colorutil.ApplyNoColor()
+	}
 
 	if !jsonOutput {
 		fmt.Println("═══════════════════════════════════════════════════════════")
@@ -371,23 +377,23 @@ func runScan(projectPath string) {
 		fmt.Println("───────────────────────────────────────────────────────────")
 		fmt.Println("  Risk Overview (analyzed packages)")
 		fmt.Println("───────────────────────────────────────────────────────────")
-		fmt.Printf("  CRITICAL:  %d\n", cCritical)
-		fmt.Printf("  HIGH:      %d\n", cHigh)
-		fmt.Printf("  MEDIUM:    %d\n", cMedium)
-		fmt.Printf("  LOW:       %d\n", cLow)
+		colorutil.PrintRiskLevel("CRITICAL", cCritical)
+		colorutil.PrintRiskLevel("HIGH", cHigh)
+		colorutil.PrintRiskLevel("MEDIUM", cMedium)
+		colorutil.PrintRiskLevel("LOW", cLow)
 
 		if len(criticalPkgs) > 0 {
 			fmt.Println()
-			fmt.Println("  [!] CRITICAL packages:")
+			fmt.Printf("  [!] %s packages:\n", colorutil.ColorizeRiskLevel("CRITICAL"))
 			for _, p := range criticalPkgs {
-				fmt.Printf("      %s\n", p)
+				fmt.Printf("      %s\n", colorutil.ColorizePackageRisk(p, 75))
 			}
 		}
 		if len(highPkgs) > 0 {
 			fmt.Println()
-			fmt.Println("  [!] HIGH risk packages:")
+			fmt.Printf("  [!] %s risk packages:\n", colorutil.ColorizeRiskLevel("HIGH"))
 			for _, p := range highPkgs {
-				fmt.Printf("      %s\n", p)
+				fmt.Printf("      %s\n", colorutil.ColorizePackageRisk(p, 50))
 			}
 		}
 		fmt.Println()
@@ -507,7 +513,7 @@ func runBatchAnalyze(db *store.Store, packages []*resolver.ResolvedPackage) {
 		}
 
 		results = append(results, report)
-		fmt.Printf(" Risk: %d/100 [%s]", report.RiskScore, report.RiskLevel)
+		fmt.Printf(" Risk: %d/100 [%s]", report.RiskScore, colorutil.ColorizeRiskLevel(report.RiskLevel))
 	}
 
 	totalElapsed := time.Since(startTime)
@@ -542,26 +548,26 @@ func printRiskSummary(results []*analyzer.AnalysisReport, failed []string, elaps
 	}
 
 	fmt.Printf("  Analyzed:  %d\n", len(results))
-	fmt.Printf("  CRITICAL:  %d\n", critical)
-	fmt.Printf("  HIGH:      %d\n", high)
-	fmt.Printf("  MEDIUM:    %d\n", medium)
-	fmt.Printf("  LOW:       %d\n", low)
+	colorutil.PrintRiskLevel("CRITICAL", critical)
+	colorutil.PrintRiskLevel("HIGH", high)
+	colorutil.PrintRiskLevel("MEDIUM", medium)
+	colorutil.PrintRiskLevel("LOW", low)
 	fmt.Printf("  Failed:    %d\n", len(failed))
 	fmt.Printf("  Duration:  %v\n", elapsed.Round(time.Second))
 
 	if len(criticalPkgs) > 0 {
 		fmt.Println()
-		fmt.Println("  [!] CRITICAL packages:")
+		fmt.Printf("  [!] %s packages:\n", colorutil.ColorizeRiskLevel("CRITICAL"))
 		for _, p := range criticalPkgs {
-			fmt.Printf("      %s\n", p)
+			fmt.Printf("      %s\n", colorutil.ColorizePackageRisk(p, 75))
 		}
 	}
 
 	if len(highPkgs) > 0 {
 		fmt.Println()
-		fmt.Println("  [!] HIGH risk packages:")
+		fmt.Printf("  [!] %s risk packages:\n", colorutil.ColorizeRiskLevel("HIGH"))
 		for _, p := range highPkgs {
-			fmt.Printf("      %s\n", p)
+			fmt.Printf("      %s\n", colorutil.ColorizePackageRisk(p, 50))
 		}
 	}
 
@@ -610,6 +616,11 @@ func runStats() {
 func runAnalyze(packageArg string) {
 	// Parse package@version
 	packageName, packageVersion := parsePackageArg(packageArg)
+
+	// Apply no-color flag
+	if noColor {
+		colorutil.ApplyNoColor()
+	}
 
 	if !jsonOutput {
 		fmt.Println("═══════════════════════════════════════════════════════════")
@@ -787,6 +798,7 @@ func parsePackageArg(arg string) (name, version string) {
 func init() {
 	// Global flags
 	rootCmd.PersistentFlags().StringVar(&dbPath, "db", store.DefaultDBPath(), "Path to fingerprint database")
+	rootCmd.PersistentFlags().BoolVar(&noColor, "no-color", false, "Disable colored output")
 
 	// Scan flags
 	scanCmd.Flags().BoolVar(&includeDevDeps, "dev", false, "Include dev dependencies")
