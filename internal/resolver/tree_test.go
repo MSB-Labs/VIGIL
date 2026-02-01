@@ -41,7 +41,7 @@ func TestResolveVersion_ExactVersion(t *testing.T) {
 func TestResolveVersion_LatestTag(t *testing.T) {
 	r, cleanup := newTestTreeResolver(func(w http.ResponseWriter, req *http.Request) {
 		// GetLatestVersion now calls GetVersionInfo(name, "latest")
-		json.NewEncoder(w).Encode(NPMVersionInfo{
+		_ = json.NewEncoder(w).Encode(NPMVersionInfo{
 			Name:    "lodash",
 			Version: "4.17.21",
 		})
@@ -60,7 +60,7 @@ func TestResolveVersion_LatestTag(t *testing.T) {
 func TestResolveVersion_Star(t *testing.T) {
 	r, cleanup := newTestTreeResolver(func(w http.ResponseWriter, req *http.Request) {
 		// GetLatestVersion now calls GetVersionInfo(name, "latest")
-		json.NewEncoder(w).Encode(NPMVersionInfo{
+		_ = json.NewEncoder(w).Encode(NPMVersionInfo{
 			Name:    "lodash",
 			Version: "4.17.21",
 		})
@@ -78,7 +78,7 @@ func TestResolveVersion_Star(t *testing.T) {
 
 func TestResolveVersion_CaretRange(t *testing.T) {
 	r, cleanup := newTestTreeResolver(func(w http.ResponseWriter, req *http.Request) {
-		json.NewEncoder(w).Encode(NPMPackageInfo{
+		_ = json.NewEncoder(w).Encode(NPMPackageInfo{
 			Name:     "lodash",
 			DistTags: map[string]string{"latest": "5.0.0"},
 			Versions: map[string]NPMVersionInfo{
@@ -103,7 +103,7 @@ func TestResolveVersion_CaretRange(t *testing.T) {
 
 func TestResolveVersion_TildeRange(t *testing.T) {
 	r, cleanup := newTestTreeResolver(func(w http.ResponseWriter, req *http.Request) {
-		json.NewEncoder(w).Encode(NPMPackageInfo{
+		_ = json.NewEncoder(w).Encode(NPMPackageInfo{
 			Name:     "debug",
 			DistTags: map[string]string{"latest": "4.4.0"},
 			Versions: map[string]NPMVersionInfo{
@@ -127,7 +127,7 @@ func TestResolveVersion_TildeRange(t *testing.T) {
 
 func TestResolveVersion_GTERange(t *testing.T) {
 	r, cleanup := newTestTreeResolver(func(w http.ResponseWriter, req *http.Request) {
-		json.NewEncoder(w).Encode(NPMPackageInfo{
+		_ = json.NewEncoder(w).Encode(NPMPackageInfo{
 			Name:     "express",
 			DistTags: map[string]string{"latest": "4.18.2"},
 			Versions: map[string]NPMVersionInfo{
@@ -150,7 +150,7 @@ func TestResolveVersion_GTERange(t *testing.T) {
 
 func TestResolveVersion_ORRange(t *testing.T) {
 	r, cleanup := newTestTreeResolver(func(w http.ResponseWriter, req *http.Request) {
-		json.NewEncoder(w).Encode(NPMPackageInfo{
+		_ = json.NewEncoder(w).Encode(NPMPackageInfo{
 			Name:     "readable-stream",
 			DistTags: map[string]string{"latest": "4.0.0"},
 			Versions: map[string]NPMVersionInfo{
@@ -174,7 +174,7 @@ func TestResolveVersion_ORRange(t *testing.T) {
 
 func TestResolveVersion_NoMatch_FallsBackToLatest(t *testing.T) {
 	r, cleanup := newTestTreeResolver(func(w http.ResponseWriter, req *http.Request) {
-		json.NewEncoder(w).Encode(NPMPackageInfo{
+		_ = json.NewEncoder(w).Encode(NPMPackageInfo{
 			Name:     "pkg",
 			DistTags: map[string]string{"latest": "1.0.0"},
 			Versions: map[string]NPMVersionInfo{
@@ -392,7 +392,7 @@ func TestIsPartialVersion(t *testing.T) {
 
 func TestResolveVersion_BareVersion(t *testing.T) {
 	r, cleanup := newTestTreeResolver(func(w http.ResponseWriter, req *http.Request) {
-		json.NewEncoder(w).Encode(NPMPackageInfo{
+		_ = json.NewEncoder(w).Encode(NPMPackageInfo{
 			Name:     "wrappy",
 			DistTags: map[string]string{"latest": "1.0.4"},
 			Versions: map[string]NPMVersionInfo{
@@ -417,7 +417,7 @@ func TestResolveVersion_BareVersion(t *testing.T) {
 
 func TestResolveVersion_PartialMinorVersion(t *testing.T) {
 	r, cleanup := newTestTreeResolver(func(w http.ResponseWriter, req *http.Request) {
-		json.NewEncoder(w).Encode(NPMPackageInfo{
+		_ = json.NewEncoder(w).Encode(NPMPackageInfo{
 			Name:     "split",
 			DistTags: map[string]string{"latest": "1.0.1"},
 			Versions: map[string]NPMVersionInfo{
@@ -442,7 +442,7 @@ func TestResolveVersion_PartialMinorVersion(t *testing.T) {
 
 func TestResolveVersion_XRangeMinor(t *testing.T) {
 	r, cleanup := newTestTreeResolver(func(w http.ResponseWriter, req *http.Request) {
-		json.NewEncoder(w).Encode(NPMPackageInfo{
+		_ = json.NewEncoder(w).Encode(NPMPackageInfo{
 			Name:     "readable-stream",
 			DistTags: map[string]string{"latest": "4.0.0"},
 			Versions: map[string]NPMVersionInfo{
