@@ -9,6 +9,11 @@ A dynamic analysis tool that maps dependency behavior through sandboxed executio
 [![CI](https://github.com/MSB-Labs/vigil/actions/workflows/ci.yml/badge.svg)](https://github.com/MSB-Labs/vigil/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/MSB-Labs/vigil?include_prereleases)](https://github.com/MSB-Labs/vigil/releases)
 
+## VIGIL Logo
+<div align="center">
+  <img width="200" alt="VIGIL Logo" src="https://github.com/user-attachments/assets/9a019466-0977-4ae2-b4a5-3f7bbb2a0fae" />
+</div>
+
 ## The Problem
 
 The software supply chain is vulnerable. Attacks like Log4Shell have shown that developers don't know the actual risk of their deep dependencies. Current SCA (Software Composition Analysis) tools are static list-checkers that only match known CVEs.
