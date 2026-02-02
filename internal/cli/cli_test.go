@@ -88,3 +88,27 @@ func TestParallelFlag_ParsesValue(t *testing.T) {
 	// Reset to default for other tests
 	f.Value.Set("4")
 }
+
+func TestClampWorkers_ZeroClampsToOne(t *testing.T) {
+	if got := clampWorkers(0, 10); got != 1 {
+		t.Errorf("clampWorkers(0, 10) = %d, want 1", got)
+	}
+}
+
+func TestClampWorkers_NegativeClampsToOne(t *testing.T) {
+	if got := clampWorkers(-1, 10); got != 1 {
+		t.Errorf("clampWorkers(-1, 10) = %d, want 1", got)
+	}
+}
+
+func TestClampWorkers_ExceedsJobsClampsToJobs(t *testing.T) {
+	if got := clampWorkers(999, 5); got != 5 {
+		t.Errorf("clampWorkers(999, 5) = %d, want 5", got)
+	}
+}
+
+func TestClampWorkers_ValidValueUnchanged(t *testing.T) {
+	if got := clampWorkers(4, 10); got != 4 {
+		t.Errorf("clampWorkers(4, 10) = %d, want 4", got)
+	}
+}

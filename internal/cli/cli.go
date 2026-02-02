@@ -374,6 +374,17 @@ func runScan(projectPath string) {
 	fmt.Println("═══════════════════════════════════════════════════════════")
 }
 
+// clampWorkers ensures parallel is between 1 and totalJobs.
+func clampWorkers(parallel, totalJobs int) int {
+	if parallel < 1 {
+		parallel = 1
+	}
+	if parallel > totalJobs {
+		parallel = totalJobs
+	}
+	return parallel
+}
+
 func runBatchAnalyze(db *store.Store, packages []*resolver.ResolvedPackage, parallel int) {
 	// Pre-flight checks
 	if err := sandbox.CheckDocker(); err != nil {
@@ -399,13 +410,7 @@ func runBatchAnalyze(db *store.Store, packages []*resolver.ResolvedPackage, para
 		return
 	}
 
-	// Clamp parallel workers to sensible bounds
-	if parallel < 1 {
-		parallel = 1
-	}
-	if parallel > len(toAnalyze) {
-		parallel = len(toAnalyze)
-	}
+	parallel = clampWorkers(parallel, len(toAnalyze))
 
 	fmt.Println()
 	fmt.Println("───────────────────────────────────────────────────────────")
@@ -778,7 +783,7 @@ func init() {
 	scanCmd.Flags().IntVar(&maxDepth, "depth", 5, "Maximum dependency tree depth")
 	scanCmd.Flags().BoolVar(&analyzeAll, "analyze", false, "Analyze all unanalyzed packages")
 	scanCmd.Flags().IntVar(&timeout, "timeout", 60, "Analysis timeout per package in seconds")
-	scanCmd.Flags().IntVar(&parallelWorkers, "parallel", 4, "Number of packages to analyze concurrently")
+	scanCmd.Flags().IntVar(&parallelWorkers, "parallel", 4, "Number of packages to analyze concurrently (high values need more Docker resources)")
 	scanCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output results as JSON")
 
 	// Analyze flags
