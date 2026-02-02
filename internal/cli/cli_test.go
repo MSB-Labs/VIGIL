@@ -63,3 +63,52 @@ func TestParsePackageArg_VersionRange(t *testing.T) {
 		t.Errorf("version = %q, want %q", version, "^4.0.0")
 	}
 }
+
+func TestParallelFlag_DefaultValue(t *testing.T) {
+	f := scanCmd.Flags().Lookup("parallel")
+	if f == nil {
+		t.Fatal("--parallel flag not registered on scan command")
+	}
+	if f.DefValue != "4" {
+		t.Errorf("default = %q, want %q", f.DefValue, "4")
+	}
+}
+
+func TestParallelFlag_ParsesValue(t *testing.T) {
+	f := scanCmd.Flags().Lookup("parallel")
+	if f == nil {
+		t.Fatal("--parallel flag not registered on scan command")
+	}
+	if err := f.Value.Set("8"); err != nil {
+		t.Fatalf("failed to set --parallel to 8: %v", err)
+	}
+	if f.Value.String() != "8" {
+		t.Errorf("value = %q, want %q", f.Value.String(), "8")
+	}
+	// Reset to default for other tests
+	_ = f.Value.Set("4")
+}
+
+func TestClampWorkers_ZeroClampsToOne(t *testing.T) {
+	if got := clampWorkers(0, 10); got != 1 {
+		t.Errorf("clampWorkers(0, 10) = %d, want 1", got)
+	}
+}
+
+func TestClampWorkers_NegativeClampsToOne(t *testing.T) {
+	if got := clampWorkers(-1, 10); got != 1 {
+		t.Errorf("clampWorkers(-1, 10) = %d, want 1", got)
+	}
+}
+
+func TestClampWorkers_ExceedsJobsClampsToJobs(t *testing.T) {
+	if got := clampWorkers(999, 5); got != 5 {
+		t.Errorf("clampWorkers(999, 5) = %d, want 5", got)
+	}
+}
+
+func TestClampWorkers_ValidValueUnchanged(t *testing.T) {
+	if got := clampWorkers(4, 10); got != 4 {
+		t.Errorf("clampWorkers(4, 10) = %d, want 4", got)
+	}
+}

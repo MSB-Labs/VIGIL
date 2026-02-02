@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/MSB-Labs/vigil/internal/analyzer"
@@ -17,13 +18,14 @@ import (
 const version = "0.1.0"
 
 var (
-	includeDevDeps bool
-	maxDepth       int
-	dbPath         string
-	timeout        int
-	analyzeAll     bool
-	jsonOutput     bool
-	noColor        bool
+	includeDevDeps  bool
+	maxDepth        int
+	dbPath          string
+	timeout         int
+	analyzeAll      bool
+	jsonOutput      bool
+	noColor         bool
+	parallelWorkers int
 )
 
 var rootCmd = &cobra.Command{
@@ -70,13 +72,15 @@ This command will:
   - Flag packages with install scripts (postinstall, preinstall)
 
 Use --analyze to automatically analyze all unanalyzed packages.
+Use --parallel N to run N analyses concurrently (default 4).
 
 Examples:
-  vigil scan                     Scan current directory
-  vigil scan /path/to/project    Scan specific project
-  vigil scan . --dev             Include dev dependencies
-  vigil scan . --analyze         Scan and analyze all packages
-  vigil scan . --json            Output as JSON`,
+  vigil scan                           Scan current directory
+  vigil scan /path/to/project          Scan specific project
+  vigil scan . --dev                   Include dev dependencies
+  vigil scan . --analyze               Scan and analyze all packages
+  vigil scan . --analyze --parallel 8  Analyze with 8 concurrent workers
+  vigil scan . --json                  Output as JSON`,
 	Args: cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		path := "."
@@ -426,7 +430,7 @@ func runScan(projectPath string) {
 
 	// Auto-analyze if requested
 	if analyzeAll && needsAnalysis > 0 && db != nil {
-		runBatchAnalyze(db, packages)
+		runBatchAnalyze(db, packages, parallelWorkers)
 	}
 
 	elapsed := time.Since(scanStart)
@@ -445,7 +449,18 @@ func runScan(projectPath string) {
 	fmt.Println("═══════════════════════════════════════════════════════════")
 }
 
-func runBatchAnalyze(db *store.Store, packages []*resolver.ResolvedPackage) {
+// clampWorkers ensures parallel is between 1 and totalJobs.
+func clampWorkers(parallel, totalJobs int) int {
+	if parallel < 1 {
+		parallel = 1
+	}
+	if parallel > totalJobs {
+		parallel = totalJobs
+	}
+	return parallel
+}
+
+func runBatchAnalyze(db *store.Store, packages []*resolver.ResolvedPackage, parallel int) {
 	// Pre-flight checks
 	if err := sandbox.CheckDocker(); err != nil {
 		fmt.Fprintf(os.Stderr, "\nError: Docker not available for analysis: %v\n", err)
@@ -470,54 +485,98 @@ func runBatchAnalyze(db *store.Store, packages []*resolver.ResolvedPackage) {
 		return
 	}
 
+	parallel = clampWorkers(parallel, len(toAnalyze))
+
 	fmt.Println()
 	fmt.Println("───────────────────────────────────────────────────────────")
-	fmt.Printf("  Analyzing %d packages...\n", len(toAnalyze))
+	fmt.Printf("  Analyzing %d packages (%d workers)...\n", len(toAnalyze), parallel)
 	fmt.Println("───────────────────────────────────────────────────────────")
 
-	a := analyzer.New()
+	type analyzeJob struct {
+		index int
+		pkg   *resolver.ResolvedPackage
+	}
+
+	type analyzeResult struct {
+		pkg    *resolver.ResolvedPackage
+		report *analyzer.AnalysisReport
+		err    error
+	}
+
+	jobs := make(chan analyzeJob, len(toAnalyze))
+	resultsCh := make(chan analyzeResult, len(toAnalyze))
+
 	cfg := &sandbox.Config{
 		Timeout: time.Duration(timeout) * time.Second,
 	}
-	sb := sandbox.New(cfg)
 
-	var results []*analyzer.AnalysisReport
+	// Spawn worker goroutines
+	var wg sync.WaitGroup
+	for w := 0; w < parallel; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			a := analyzer.New()
+			sb := sandbox.New(cfg)
+			for job := range jobs {
+				result, err := sb.AnalyzePackage(job.pkg.Name, job.pkg.ResolvedVersion)
+				if err != nil {
+					resultsCh <- analyzeResult{pkg: job.pkg, err: err}
+					continue
+				}
+				report := a.AnalyzeResult(result, job.pkg.Name, job.pkg.ResolvedVersion)
+				report.Fingerprint.AnalyzedAt = time.Now()
+				resultsCh <- analyzeResult{pkg: job.pkg, report: report}
+			}
+		}()
+	}
+
+	// Send all jobs
+	for i, pkg := range toAnalyze {
+		jobs <- analyzeJob{index: i, pkg: pkg}
+	}
+	close(jobs)
+
+	// Close results channel once all workers finish
+	go func() {
+		wg.Wait()
+		close(resultsCh)
+	}()
+
+	// Collect results from the main goroutine (serialized DB writes + progress output)
+	var allResults []*analyzer.AnalysisReport
 	var failed []string
+	completed := 0
+	total := len(toAnalyze)
 	startTime := time.Now()
 
-	for i, pkg := range toAnalyze {
+	for r := range resultsCh {
+		completed++
 		elapsed := time.Since(startTime)
-		if i > 0 {
-			avgPerPkg := elapsed / time.Duration(i)
-			remaining := avgPerPkg * time.Duration(len(toAnalyze)-i)
-			fmt.Printf("\n  [%d/%d] Analyzing %s@%s... (ETA: %v)",
-				i+1, len(toAnalyze), pkg.Name, pkg.ResolvedVersion,
-				remaining.Round(time.Second))
-		} else {
-			fmt.Printf("\n  [%d/%d] Analyzing %s@%s...",
-				i+1, len(toAnalyze), pkg.Name, pkg.ResolvedVersion)
-		}
 
-		result, err := sb.AnalyzePackage(pkg.Name, pkg.ResolvedVersion)
-		if err != nil {
-			fmt.Printf(" FAILED: %v", err)
-			failed = append(failed, fmt.Sprintf("%s@%s", pkg.Name, pkg.ResolvedVersion))
+		if r.err != nil {
+			fmt.Printf("\n  [%d/%d] %s@%s FAILED: %v",
+				completed, total, r.pkg.Name, r.pkg.ResolvedVersion, r.err)
+			failed = append(failed, fmt.Sprintf("%s@%s", r.pkg.Name, r.pkg.ResolvedVersion))
 			continue
 		}
 
-		report := a.AnalyzeResult(result, pkg.Name, pkg.ResolvedVersion)
-		report.Fingerprint.AnalyzedAt = time.Now()
-
-		if err := db.SaveFingerprint(report.Fingerprint); err != nil {
-			fmt.Fprintf(os.Stderr, " (save failed: %v)", err)
+		if err := db.SaveFingerprint(r.report.Fingerprint); err != nil {
+			fmt.Fprintf(os.Stderr, "\n  (save failed for %s@%s: %v)", r.pkg.Name, r.pkg.ResolvedVersion, err)
 		}
 
-		results = append(results, report)
-		fmt.Printf(" Risk: %d/100 [%s]", report.RiskScore, colorutil.ColorizeRiskLevel(report.RiskLevel))
+		allResults = append(allResults, r.report)
+
+		avgPerPkg := elapsed / time.Duration(completed)
+		remaining := avgPerPkg * time.Duration(total-completed)
+		fmt.Printf("\n  [%d/%d] %s@%s Risk: %d/100 [%s] (ETA: %v)",
+			completed, total, r.pkg.Name, r.pkg.ResolvedVersion,
+			r.report.RiskScore, colorutil.ColorizeRiskLevel(r.report.RiskLevel),
+			remaining.Round(time.Second))
 	}
 
 	totalElapsed := time.Since(startTime)
-	printRiskSummary(results, failed, totalElapsed)
+	printRiskSummary(allResults, failed, totalElapsed)
 }
 
 func printRiskSummary(results []*analyzer.AnalysisReport, failed []string, elapsed time.Duration) {
@@ -805,6 +864,7 @@ func init() {
 	scanCmd.Flags().IntVar(&maxDepth, "depth", 5, "Maximum dependency tree depth")
 	scanCmd.Flags().BoolVar(&analyzeAll, "analyze", false, "Analyze all unanalyzed packages")
 	scanCmd.Flags().IntVar(&timeout, "timeout", 60, "Analysis timeout per package in seconds")
+	scanCmd.Flags().IntVar(&parallelWorkers, "parallel", 4, "Number of packages to analyze concurrently (high values need more Docker resources)")
 	scanCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output results as JSON")
 
 	// Analyze flags
