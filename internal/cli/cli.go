@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/MSB-Labs/vigil/internal/analyzer"
+	"github.com/MSB-Labs/vigil/internal/colorutil"
 	"github.com/MSB-Labs/vigil/internal/resolver"
 	"github.com/MSB-Labs/vigil/internal/sandbox"
 	"github.com/MSB-Labs/vigil/internal/store"
@@ -23,6 +24,7 @@ var (
 	timeout         int
 	analyzeAll      bool
 	jsonOutput      bool
+	noColor         bool
 	parallelWorkers int
 )
 
@@ -153,6 +155,10 @@ The image will be tagged as 'vigil-sandbox:latest'.`,
 func runScan(projectPath string) {
 	scanStart := time.Now()
 
+	if noColor {
+		colorutil.ApplyNoColor()
+	}
+
 	if !jsonOutput {
 		fmt.Println("═══════════════════════════════════════════════════════════")
 		fmt.Println("  VIGIL - Verified Integrity Guard for Imported Libraries")
@@ -183,11 +189,36 @@ func runScan(projectPath string) {
 		os.Exit(1)
 	}
 
+	// Auto-include devDeps when no direct dependencies exist
+	autoIncludedDevDeps := false
+	if len(pkg.Dependencies) == 0 && len(pkg.DevDependencies) > 0 && !includeDevDeps {
+		includeDevDeps = true
+		autoIncludedDevDeps = true
+	}
+
+	// Detect workspaces
+	wsInfo, _ := resolver.DetectWorkspaces(projectPath)
+	isWorkspace := wsInfo != nil
+
 	if !jsonOutput {
 		fmt.Printf("Project: %s\n", pkg.Name)
 		fmt.Printf("Version: %s\n", pkg.Version)
 		fmt.Printf("Direct dependencies: %d\n", len(pkg.Dependencies))
-		fmt.Printf("Dev dependencies: %d\n\n", len(pkg.DevDependencies))
+		fmt.Printf("Dev dependencies: %d\n", len(pkg.DevDependencies))
+		if autoIncludedDevDeps {
+			fmt.Printf("\n  [i] No direct dependencies found. Auto-including %d dev dependencies.\n", len(pkg.DevDependencies))
+		}
+		if isWorkspace {
+			fmt.Printf("\n  Workspace detected: %d packages\n", len(wsInfo.Packages))
+			for _, ws := range wsInfo.Packages {
+				name := ws.PackageJSON.Name
+				if name == "" {
+					name = ws.Path
+				}
+				fmt.Printf("    - %s (%s)\n", name, ws.Path)
+			}
+		}
+		fmt.Println()
 	}
 
 	// Resolve dependency tree
@@ -196,7 +227,14 @@ func runScan(projectPath string) {
 	}
 
 	treeResolver := resolver.NewTreeResolver(maxDepth)
-	packages, err := treeResolver.Resolve(projectPath, includeDevDeps)
+	var packages []*resolver.ResolvedPackage
+
+	if isWorkspace {
+		externalDeps := wsInfo.GetExternalDependencies(includeDevDeps)
+		packages, err = treeResolver.ResolveFromDependencies(externalDeps)
+	} else {
+		packages, err = treeResolver.Resolve(projectPath, includeDevDeps)
+	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error resolving dependencies: %v\n", err)
 		os.Exit(1)
@@ -236,10 +274,31 @@ func runScan(projectPath string) {
 	// JSON output path
 	if jsonOutput {
 		scanJSON := ScanJSON{
-			Project:       pkg.Name,
-			TotalPackages: len(packages),
-			Analyzed:      cached,
-			NeedsAnalysis: needsAnalysis,
+			Project:         pkg.Name,
+			TotalPackages:   len(packages),
+			Analyzed:        cached,
+			NeedsAnalysis:   needsAnalysis,
+			AutoIncludedDev: autoIncludedDevDeps,
+			IsWorkspace:     isWorkspace,
+		}
+
+		if isWorkspace {
+			for _, ws := range wsInfo.Packages {
+				name := ws.PackageJSON.Name
+				if name == "" {
+					name = ws.Path
+				}
+				scanJSON.WorkspacePackages = append(scanJSON.WorkspacePackages, name)
+			}
+		}
+
+		jsonSkipped := treeResolver.GetSkipped()
+		for _, s := range jsonSkipped {
+			scanJSON.Skipped = append(scanJSON.Skipped, SkippedJSON{
+				Name:      s.Name,
+				Specifier: s.Specifier,
+				Reason:    s.Reason,
+			})
 		}
 
 		// Risk breakdown from cached results
@@ -322,23 +381,23 @@ func runScan(projectPath string) {
 		fmt.Println("───────────────────────────────────────────────────────────")
 		fmt.Println("  Risk Overview (analyzed packages)")
 		fmt.Println("───────────────────────────────────────────────────────────")
-		fmt.Printf("  CRITICAL:  %d\n", cCritical)
-		fmt.Printf("  HIGH:      %d\n", cHigh)
-		fmt.Printf("  MEDIUM:    %d\n", cMedium)
-		fmt.Printf("  LOW:       %d\n", cLow)
+		colorutil.PrintRiskLevel("CRITICAL", cCritical)
+		colorutil.PrintRiskLevel("HIGH", cHigh)
+		colorutil.PrintRiskLevel("MEDIUM", cMedium)
+		colorutil.PrintRiskLevel("LOW", cLow)
 
 		if len(criticalPkgs) > 0 {
 			fmt.Println()
-			fmt.Println("  [!] CRITICAL packages:")
+			fmt.Printf("  [!] %s packages:\n", colorutil.ColorizeRiskLevel("CRITICAL"))
 			for _, p := range criticalPkgs {
-				fmt.Printf("      %s\n", p)
+				fmt.Printf("      %s\n", colorutil.ColorizePackageRisk(p, 75))
 			}
 		}
 		if len(highPkgs) > 0 {
 			fmt.Println()
-			fmt.Println("  [!] HIGH risk packages:")
+			fmt.Printf("  [!] %s risk packages:\n", colorutil.ColorizeRiskLevel("HIGH"))
 			for _, p := range highPkgs {
-				fmt.Printf("      %s\n", p)
+				fmt.Printf("      %s\n", colorutil.ColorizePackageRisk(p, 50))
 			}
 		}
 		fmt.Println()
@@ -357,6 +416,18 @@ func runScan(projectPath string) {
 		fmt.Println()
 	}
 
+	// Show skipped packages (non-registry specifiers)
+	skipped := treeResolver.GetSkipped()
+	if len(skipped) > 0 {
+		fmt.Println("───────────────────────────────────────────────────────────")
+		fmt.Printf("  Skipped (non-registry specifiers): %d\n", len(skipped))
+		fmt.Println("───────────────────────────────────────────────────────────")
+		for _, s := range skipped {
+			fmt.Printf("  - %s: %s\n", s.Name, s.Specifier)
+		}
+		fmt.Println()
+	}
+
 	// Auto-analyze if requested
 	if analyzeAll && needsAnalysis > 0 && db != nil {
 		runBatchAnalyze(db, packages, parallelWorkers)
@@ -364,13 +435,17 @@ func runScan(projectPath string) {
 
 	elapsed := time.Since(scanStart)
 	fmt.Println("═══════════════════════════════════════════════════════════")
-	if analyzeAll && needsAnalysis > 0 {
-		fmt.Printf("  Scan complete. Duration: %v\n", elapsed.Round(time.Second))
+	if len(packages) == 0 {
+		fmt.Println("  Scan complete. No packages found to analyze.")
+	} else if analyzeAll && needsAnalysis > 0 {
+		fmt.Printf("  Scan complete. %d packages resolved.\n", len(packages))
 	} else if needsAnalysis > 0 {
-		fmt.Println("  Scan complete. Run 'vigil scan --analyze' for full analysis.")
+		fmt.Printf("  Scan complete. %d packages resolved, %d need analysis.\n", len(packages), needsAnalysis)
+		fmt.Println("  Run 'vigil scan --analyze' for full analysis.")
 	} else {
-		fmt.Println("  Scan complete. All packages analyzed.")
+		fmt.Printf("  Scan complete. All %d packages analyzed.\n", len(packages))
 	}
+	fmt.Printf("  Duration: %v\n", elapsed.Round(time.Second))
 	fmt.Println("═══════════════════════════════════════════════════════════")
 }
 
@@ -496,7 +571,7 @@ func runBatchAnalyze(db *store.Store, packages []*resolver.ResolvedPackage, para
 		remaining := avgPerPkg * time.Duration(total-completed)
 		fmt.Printf("\n  [%d/%d] %s@%s Risk: %d/100 [%s] (ETA: %v)",
 			completed, total, r.pkg.Name, r.pkg.ResolvedVersion,
-			r.report.RiskScore, r.report.RiskLevel,
+			r.report.RiskScore, colorutil.ColorizeRiskLevel(r.report.RiskLevel),
 			remaining.Round(time.Second))
 	}
 
@@ -532,26 +607,26 @@ func printRiskSummary(results []*analyzer.AnalysisReport, failed []string, elaps
 	}
 
 	fmt.Printf("  Analyzed:  %d\n", len(results))
-	fmt.Printf("  CRITICAL:  %d\n", critical)
-	fmt.Printf("  HIGH:      %d\n", high)
-	fmt.Printf("  MEDIUM:    %d\n", medium)
-	fmt.Printf("  LOW:       %d\n", low)
+	colorutil.PrintRiskLevel("CRITICAL", critical)
+	colorutil.PrintRiskLevel("HIGH", high)
+	colorutil.PrintRiskLevel("MEDIUM", medium)
+	colorutil.PrintRiskLevel("LOW", low)
 	fmt.Printf("  Failed:    %d\n", len(failed))
 	fmt.Printf("  Duration:  %v\n", elapsed.Round(time.Second))
 
 	if len(criticalPkgs) > 0 {
 		fmt.Println()
-		fmt.Println("  [!] CRITICAL packages:")
+		fmt.Printf("  [!] %s packages:\n", colorutil.ColorizeRiskLevel("CRITICAL"))
 		for _, p := range criticalPkgs {
-			fmt.Printf("      %s\n", p)
+			fmt.Printf("      %s\n", colorutil.ColorizePackageRisk(p, 75))
 		}
 	}
 
 	if len(highPkgs) > 0 {
 		fmt.Println()
-		fmt.Println("  [!] HIGH risk packages:")
+		fmt.Printf("  [!] %s risk packages:\n", colorutil.ColorizeRiskLevel("HIGH"))
 		for _, p := range highPkgs {
-			fmt.Printf("      %s\n", p)
+			fmt.Printf("      %s\n", colorutil.ColorizePackageRisk(p, 50))
 		}
 	}
 
@@ -600,6 +675,11 @@ func runStats() {
 func runAnalyze(packageArg string) {
 	// Parse package@version
 	packageName, packageVersion := parsePackageArg(packageArg)
+
+	// Apply no-color flag
+	if noColor {
+		colorutil.ApplyNoColor()
+	}
 
 	if !jsonOutput {
 		fmt.Println("═══════════════════════════════════════════════════════════")
@@ -777,6 +857,7 @@ func parsePackageArg(arg string) (name, version string) {
 func init() {
 	// Global flags
 	rootCmd.PersistentFlags().StringVar(&dbPath, "db", store.DefaultDBPath(), "Path to fingerprint database")
+	rootCmd.PersistentFlags().BoolVar(&noColor, "no-color", false, "Disable colored output")
 
 	// Scan flags
 	scanCmd.Flags().BoolVar(&includeDevDeps, "dev", false, "Include dev dependencies")

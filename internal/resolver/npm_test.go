@@ -32,7 +32,7 @@ func TestNPMClient_GetPackageInfo_Success(t *testing.T) {
 			http.NotFound(w, r)
 			return
 		}
-		json.NewEncoder(w).Encode(info)
+		_ = json.NewEncoder(w).Encode(info)
 	})
 	defer cleanup()
 
@@ -77,7 +77,7 @@ func TestNPMClient_GetPackageInfo_ServerError(t *testing.T) {
 
 func TestNPMClient_GetPackageInfo_InvalidJSON(t *testing.T) {
 	client, cleanup := newTestNPMClient(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("not valid json{{{"))
+		_, _ = w.Write([]byte("not valid json{{{"))
 	})
 	defer cleanup()
 
@@ -107,7 +107,7 @@ func TestNPMClient_GetVersionInfo_Success(t *testing.T) {
 			http.NotFound(w, r)
 			return
 		}
-		json.NewEncoder(w).Encode(versionInfo)
+		_ = json.NewEncoder(w).Encode(versionInfo)
 	})
 	defer cleanup()
 
@@ -143,9 +143,13 @@ func TestNPMClient_GetVersionInfo_NotFound(t *testing.T) {
 
 func TestNPMClient_GetLatestVersion(t *testing.T) {
 	client, cleanup := newTestNPMClient(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(NPMPackageInfo{
-			Name:     "lodash",
-			DistTags: map[string]string{"latest": "4.17.21"},
+		if r.URL.Path != "/lodash/latest" {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(NPMVersionInfo{
+			Name:    "lodash",
+			Version: "4.17.21",
 		})
 	})
 	defer cleanup()
@@ -161,10 +165,7 @@ func TestNPMClient_GetLatestVersion(t *testing.T) {
 
 func TestNPMClient_GetLatestVersion_NoLatestTag(t *testing.T) {
 	client, cleanup := newTestNPMClient(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(NPMPackageInfo{
-			Name:     "lodash",
-			DistTags: map[string]string{},
-		})
+		w.WriteHeader(http.StatusNotFound)
 	})
 	defer cleanup()
 

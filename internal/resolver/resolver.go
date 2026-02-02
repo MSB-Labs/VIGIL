@@ -15,6 +15,33 @@ type PackageJSON struct {
 	Version         string            `json:"version"`
 	Dependencies    map[string]string `json:"dependencies"`
 	DevDependencies map[string]string `json:"devDependencies"`
+	Workspaces      WorkspacesConfig  `json:"workspaces"`
+}
+
+// WorkspacesConfig handles both array and object forms of the workspaces field.
+// npm/yarn: "workspaces": ["packages/*"]
+// yarn alt: "workspaces": {"packages": ["packages/*"]}
+type WorkspacesConfig struct {
+	Patterns []string
+}
+
+// UnmarshalJSON handles both array and object workspace formats
+func (w *WorkspacesConfig) UnmarshalJSON(data []byte) error {
+	// Try array first: ["packages/*", "apps/*"]
+	var arr []string
+	if err := json.Unmarshal(data, &arr); err == nil {
+		w.Patterns = arr
+		return nil
+	}
+	// Try object: {"packages": ["packages/*"]}
+	var obj struct {
+		Packages []string `json:"packages"`
+	}
+	if err := json.Unmarshal(data, &obj); err == nil {
+		w.Patterns = obj.Packages
+		return nil
+	}
+	return nil
 }
 
 // Dependency represents a single package dependency

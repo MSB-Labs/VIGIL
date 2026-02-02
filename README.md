@@ -9,6 +9,52 @@ A dynamic analysis tool that maps dependency behavior through sandboxed executio
 [![CI](https://github.com/MSB-Labs/vigil/actions/workflows/ci.yml/badge.svg)](https://github.com/MSB-Labs/vigil/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/MSB-Labs/vigil?include_prereleases)](https://github.com/MSB-Labs/vigil/releases)
 
+## VIGIL Logo
+<div align="center">
+  <img width="200" alt="VIGIL Logo" src="https://github.com/user-attachments/assets/9a019466-0977-4ae2-b4a5-3f7bbb2a0fae" />
+</div>
+
+## Maintainers
+
+<div align="center">
+
+  | GitHub Profile | Name | Username |
+  |:--------------:|------|----------|
+  | <a href="https://github.com/MossabArektout"><img src="https://avatars.githubusercontent.com/u/115503659?v=4" width="92px;" alt="MossabArektout"></a> | Mossab Arektout | <a href="https://github.com/MossabArektout"><img src="https://img.shields.io/badge/@MossabArektout-8A2BE2?style=flat"/></a> |
+
+</div>
+
+---
+
+## Contributors
+
+<div align="center">
+<table>
+<tr>
+<td align="center">
+  <a href="https://github.com/MossabArektout">
+    <img src="https://avatars.githubusercontent.com/u/115503659?v=4" width="60px;" alt="Mossab Arektout"/>
+  </a>
+  <br>
+  <a href="https://github.com/MossabArektout" title="GitHub">
+    <img src="https://img.shields.io/badge/MossabArektout-6b0e96?style=flat-square&logo=github&logoColor=white" />
+  </a>
+</td>
+<td align="center">
+  <a href="https://github.com/Sujeev-Uthayakumar">
+    <img src="https://avatars.githubusercontent.com/u/76674104?v=4" width="60px;" alt="Sujeev Uthayakumar"/>
+  </a>
+  <br>
+  <a href="https://github.com/Sujeev-Uthayakumar" title="GitHub">
+    <img src="https://img.shields.io/badge/Sujeev--Uthayakumar-6b0e96?style=flat-square&logo=github&logoColor=white" />
+  </a>
+</td>
+</tr>
+</table>
+</div>
+
+---
+
 ## The Problem
 
 The software supply chain is vulnerable. Attacks like Log4Shell have shown that developers don't know the actual risk of their deep dependencies. Current SCA (Software Composition Analysis) tools are static list-checkers that only match known CVEs.
@@ -195,6 +241,7 @@ Available Commands:
 
 Flags:
   --db string   Path to fingerprint database (default "~/.vigil/fingerprints.db")
+  --no-color    Disable colored output
   -h, --help    help for vigil
 
 Use "vigil [command] --help" for more information about a command.

@@ -173,11 +173,11 @@ func (s *Store) GetFingerprint(packageName, version, ecosystem string) (*Behavio
 	}
 
 	// Unmarshal JSON arrays
-	json.Unmarshal([]byte(networkCalls), &fp.NetworkCalls)
-	json.Unmarshal([]byte(fileReads), &fp.FileReads)
-	json.Unmarshal([]byte(fileWrites), &fp.FileWrites)
-	json.Unmarshal([]byte(envVarsRead), &fp.EnvVarsRead)
-	json.Unmarshal([]byte(shellCommands), &fp.ShellCommands)
+	_ = json.Unmarshal([]byte(networkCalls), &fp.NetworkCalls)
+	_ = json.Unmarshal([]byte(fileReads), &fp.FileReads)
+	_ = json.Unmarshal([]byte(fileWrites), &fp.FileWrites)
+	_ = json.Unmarshal([]byte(envVarsRead), &fp.EnvVarsRead)
+	_ = json.Unmarshal([]byte(shellCommands), &fp.ShellCommands)
 
 	return &fp, nil
 }
@@ -229,11 +229,11 @@ func (s *Store) GetHighRiskPackages(minRiskScore int) ([]*BehaviorFingerprint, e
 			return nil, err
 		}
 
-		json.Unmarshal([]byte(networkCalls), &fp.NetworkCalls)
-		json.Unmarshal([]byte(fileReads), &fp.FileReads)
-		json.Unmarshal([]byte(fileWrites), &fp.FileWrites)
-		json.Unmarshal([]byte(envVarsRead), &fp.EnvVarsRead)
-		json.Unmarshal([]byte(shellCommands), &fp.ShellCommands)
+		_ = json.Unmarshal([]byte(networkCalls), &fp.NetworkCalls)
+		_ = json.Unmarshal([]byte(fileReads), &fp.FileReads)
+		_ = json.Unmarshal([]byte(fileWrites), &fp.FileWrites)
+		_ = json.Unmarshal([]byte(envVarsRead), &fp.EnvVarsRead)
+		_ = json.Unmarshal([]byte(shellCommands), &fp.ShellCommands)
 
 		results = append(results, &fp)
 	}
@@ -255,19 +255,19 @@ func (s *Store) GetStats() (*Stats, error) {
 	var stats Stats
 
 	// Total unique packages
-	s.db.QueryRow(`SELECT COUNT(DISTINCT package_name) FROM fingerprints`).Scan(&stats.TotalPackages)
+	_ = s.db.QueryRow(`SELECT COUNT(DISTINCT package_name) FROM fingerprints`).Scan(&stats.TotalPackages)
 
 	// Total versions
-	s.db.QueryRow(`SELECT COUNT(*) FROM fingerprints`).Scan(&stats.TotalVersions)
+	_ = s.db.QueryRow(`SELECT COUNT(*) FROM fingerprints`).Scan(&stats.TotalVersions)
 
 	// High risk (score >= 75)
-	s.db.QueryRow(`SELECT COUNT(*) FROM fingerprints WHERE risk_score >= 75`).Scan(&stats.HighRiskCount)
+	_ = s.db.QueryRow(`SELECT COUNT(*) FROM fingerprints WHERE risk_score >= 75`).Scan(&stats.HighRiskCount)
 
 	// With install hooks
-	s.db.QueryRow(`SELECT COUNT(*) FROM fingerprints WHERE has_install_hooks = TRUE`).Scan(&stats.WithInstallHooks)
+	_ = s.db.QueryRow(`SELECT COUNT(*) FROM fingerprints WHERE has_install_hooks = TRUE`).Scan(&stats.WithInstallHooks)
 
 	// Last analyzed
-	s.db.QueryRow(`SELECT MAX(analyzed_at) FROM fingerprints`).Scan(&stats.LastAnalyzed)
+	_ = s.db.QueryRow(`SELECT MAX(analyzed_at) FROM fingerprints`).Scan(&stats.LastAnalyzed)
 
 	return &stats, nil
 }
