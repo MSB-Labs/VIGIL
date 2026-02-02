@@ -49,6 +49,15 @@ A dynamic analysis tool that maps dependency behavior through sandboxed executio
     <img src="https://img.shields.io/badge/Sujeev--Uthayakumar-6b0e96?style=flat-square&logo=github&logoColor=white" />
   </a>
 </td>
+<td align="center">
+  <a href="https://github.com/Abderrahimself">
+    <img src="https://avatars.githubusercontent.com/u/73423121?v=4" width="60px;" alt="Abderrahim Mabrouk"/>
+  </a>
+  <br>
+  <a href="https://github.com/Abderrahimself" title="GitHub">
+    <img src="https://img.shields.io/badge/Abderrahimself-6b0e96?style=flat-square&logo=github&logoColor=white" />
+  </a>
+</td>
 </tr>
 </table>
 </div>
