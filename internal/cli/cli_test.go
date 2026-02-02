@@ -112,3 +112,45 @@ func TestClampWorkers_ValidValueUnchanged(t *testing.T) {
 		t.Errorf("clampWorkers(4, 10) = %d, want 4", got)
 	}
 }
+
+func TestRetriesFlag_DefaultValue(t *testing.T) {
+	f := scanCmd.Flags().Lookup("retries")
+	if f == nil {
+		t.Fatal("--retries flag not registered on scan command")
+	}
+	if f.DefValue != "0" {
+		t.Errorf("default = %q, want %q", f.DefValue, "0")
+	}
+}
+
+func TestRetriesFlag_ParsesValue(t *testing.T) {
+	f := scanCmd.Flags().Lookup("retries")
+	if f == nil {
+		t.Fatal("--retries flag not registered on scan command")
+	}
+	if err := f.Value.Set("3"); err != nil {
+		t.Fatalf("failed to set --retries to 3: %v", err)
+	}
+	if f.Value.String() != "3" {
+		t.Errorf("value = %q, want %q", f.Value.String(), "3")
+	}
+	_ = f.Value.Set("0")
+}
+
+func TestClampRetries_NegativeClampsToZero(t *testing.T) {
+	if got := clampRetries(-1); got != 0 {
+		t.Errorf("clampRetries(-1) = %d, want 0", got)
+	}
+}
+
+func TestClampRetries_ZeroUnchanged(t *testing.T) {
+	if got := clampRetries(0); got != 0 {
+		t.Errorf("clampRetries(0) = %d, want 0", got)
+	}
+}
+
+func TestClampRetries_PositiveUnchanged(t *testing.T) {
+	if got := clampRetries(3); got != 3 {
+		t.Errorf("clampRetries(3) = %d, want 3", got)
+	}
+}

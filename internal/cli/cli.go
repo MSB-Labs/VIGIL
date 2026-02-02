@@ -26,6 +26,7 @@ var (
 	jsonOutput      bool
 	noColor         bool
 	parallelWorkers int
+	maxRetries      int
 )
 
 var rootCmd = &cobra.Command{
@@ -73,14 +74,17 @@ This command will:
 
 Use --analyze to automatically analyze all unanalyzed packages.
 Use --parallel N to run N analyses concurrently (default 4).
+Use --retries N to retry failed analyses N times before giving up (default 0).
 
 Examples:
-  vigil scan                           Scan current directory
-  vigil scan /path/to/project          Scan specific project
-  vigil scan . --dev                   Include dev dependencies
-  vigil scan . --analyze               Scan and analyze all packages
-  vigil scan . --analyze --parallel 8  Analyze with 8 concurrent workers
-  vigil scan . --json                  Output as JSON`,
+  vigil scan                                      Scan current directory
+  vigil scan /path/to/project                     Scan specific project
+  vigil scan . --dev                              Include dev dependencies
+  vigil scan . --analyze                          Scan and analyze all packages
+  vigil scan . --analyze --parallel 8             Analyze with 8 concurrent workers
+  vigil scan . --analyze --retries 2              Retry failed analyses up to 2 times
+  vigil scan . --analyze --parallel 4 --retries 2 Combine parallel and retries
+  vigil scan . --json                             Output as JSON`,
 	Args: cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		path := "."
@@ -430,7 +434,7 @@ func runScan(projectPath string) {
 
 	// Auto-analyze if requested
 	if analyzeAll && needsAnalysis > 0 && db != nil {
-		runBatchAnalyze(db, packages, parallelWorkers)
+		runBatchAnalyze(db, packages, parallelWorkers, maxRetries)
 	}
 
 	elapsed := time.Since(scanStart)
@@ -460,7 +464,15 @@ func clampWorkers(parallel, totalJobs int) int {
 	return parallel
 }
 
-func runBatchAnalyze(db *store.Store, packages []*resolver.ResolvedPackage, parallel int) {
+// clampRetries ensures retries is not negative.
+func clampRetries(retries int) int {
+	if retries < 0 {
+		return 0
+	}
+	return retries
+}
+
+func runBatchAnalyze(db *store.Store, packages []*resolver.ResolvedPackage, parallel int, retries int) {
 	// Pre-flight checks
 	if err := sandbox.CheckDocker(); err != nil {
 		fmt.Fprintf(os.Stderr, "\nError: Docker not available for analysis: %v\n", err)
@@ -486,10 +498,17 @@ func runBatchAnalyze(db *store.Store, packages []*resolver.ResolvedPackage, para
 	}
 
 	parallel = clampWorkers(parallel, len(toAnalyze))
+	retries = clampRetries(retries)
 
 	fmt.Println()
 	fmt.Println("───────────────────────────────────────────────────────────")
-	fmt.Printf("  Analyzing %d packages (%d workers)...\n", len(toAnalyze), parallel)
+	if retries == 1 {
+		fmt.Printf("  Analyzing %d packages (%d workers, %d retry)...\n", len(toAnalyze), parallel, retries)
+	} else if retries > 1 {
+		fmt.Printf("  Analyzing %d packages (%d workers, %d retries)...\n", len(toAnalyze), parallel, retries)
+	} else {
+		fmt.Printf("  Analyzing %d packages (%d workers)...\n", len(toAnalyze), parallel)
+	}
 	fmt.Println("───────────────────────────────────────────────────────────")
 
 	type analyzeJob struct {
@@ -498,9 +517,10 @@ func runBatchAnalyze(db *store.Store, packages []*resolver.ResolvedPackage, para
 	}
 
 	type analyzeResult struct {
-		pkg    *resolver.ResolvedPackage
-		report *analyzer.AnalysisReport
-		err    error
+		pkg      *resolver.ResolvedPackage
+		report   *analyzer.AnalysisReport
+		err      error
+		attempts int
 	}
 
 	jobs := make(chan analyzeJob, len(toAnalyze))
@@ -519,14 +539,26 @@ func runBatchAnalyze(db *store.Store, packages []*resolver.ResolvedPackage, para
 			a := analyzer.New()
 			sb := sandbox.New(cfg)
 			for job := range jobs {
-				result, err := sb.AnalyzePackage(job.pkg.Name, job.pkg.ResolvedVersion)
+				var result *sandbox.ExecutionResult
+				var err error
+				attempts := 0
+				for attempt := 0; attempt <= retries; attempt++ {
+					attempts++
+					result, err = sb.AnalyzePackage(job.pkg.Name, job.pkg.ResolvedVersion)
+					if err == nil {
+						break
+					}
+					if attempt < retries {
+						time.Sleep(time.Duration(attempt+1) * time.Second)
+					}
+				}
 				if err != nil {
-					resultsCh <- analyzeResult{pkg: job.pkg, err: err}
+					resultsCh <- analyzeResult{pkg: job.pkg, err: err, attempts: attempts}
 					continue
 				}
 				report := a.AnalyzeResult(result, job.pkg.Name, job.pkg.ResolvedVersion)
 				report.Fingerprint.AnalyzedAt = time.Now()
-				resultsCh <- analyzeResult{pkg: job.pkg, report: report}
+				resultsCh <- analyzeResult{pkg: job.pkg, report: report, attempts: attempts}
 			}
 		}()
 	}
@@ -555,8 +587,13 @@ func runBatchAnalyze(db *store.Store, packages []*resolver.ResolvedPackage, para
 		elapsed := time.Since(startTime)
 
 		if r.err != nil {
-			fmt.Printf("\n  [%d/%d] %s@%s FAILED: %v",
-				completed, total, r.pkg.Name, r.pkg.ResolvedVersion, r.err)
+			if r.attempts > 1 {
+				fmt.Printf("\n  [%d/%d] %s@%s FAILED after %d attempts: %v",
+					completed, total, r.pkg.Name, r.pkg.ResolvedVersion, r.attempts, r.err)
+			} else {
+				fmt.Printf("\n  [%d/%d] %s@%s FAILED: %v",
+					completed, total, r.pkg.Name, r.pkg.ResolvedVersion, r.err)
+			}
 			failed = append(failed, fmt.Sprintf("%s@%s", r.pkg.Name, r.pkg.ResolvedVersion))
 			continue
 		}
@@ -865,6 +902,7 @@ func init() {
 	scanCmd.Flags().BoolVar(&analyzeAll, "analyze", false, "Analyze all unanalyzed packages")
 	scanCmd.Flags().IntVar(&timeout, "timeout", 60, "Analysis timeout per package in seconds")
 	scanCmd.Flags().IntVar(&parallelWorkers, "parallel", 4, "Number of packages to analyze concurrently (high values need more Docker resources)")
+	scanCmd.Flags().IntVar(&maxRetries, "retries", 0, "Number of retry attempts for failed package analyses")
 	scanCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output results as JSON")
 
 	// Analyze flags
