@@ -112,3 +112,16 @@ func TestClampWorkers_ValidValueUnchanged(t *testing.T) {
 		t.Errorf("clampWorkers(4, 10) = %d, want 4", got)
 	}
 }
+
+func TestNoColorFlag_Registered(t *testing.T) {
+	// Verify the --no-color flag exists on rootCmd and defaults to false.
+	// rootCmd uses PersistentFlags so it applies to all subcommands.
+	f := rootCmd.PersistentFlags().Lookup("no-color")
+	if f == nil {
+		t.Fatal("--no-color flag not registered on root command")
+	}
+	if f.DefValue != "false" {
+		t.Errorf("--no-color default = %q, want %q", f.DefValue, "false")
+	}
+}
+
