@@ -86,7 +86,7 @@ func TestParallelFlag_ParsesValue(t *testing.T) {
 		t.Errorf("value = %q, want %q", f.Value.String(), "8")
 	}
 	// Reset to default for other tests
-	f.Value.Set("4")
+	_ = f.Value.Set("4")
 }
 
 func TestClampWorkers_ZeroClampsToOne(t *testing.T) {
