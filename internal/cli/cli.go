@@ -26,6 +26,7 @@ var (
 	jsonOutput      bool
 	noColor         bool
 	parallelWorkers int
+	failAbove       int
 )
 
 var rootCmd = &cobra.Command{
@@ -428,9 +429,20 @@ func runScan(projectPath string) {
 		fmt.Println()
 	}
 
+	// Track max risk score from cached results
+	maxRisk := 0
+	for _, cr := range cachedResults {
+		if cr.riskScore > maxRisk {
+			maxRisk = cr.riskScore
+		}
+	}
+
 	// Auto-analyze if requested
 	if analyzeAll && needsAnalysis > 0 && db != nil {
-		runBatchAnalyze(db, packages, parallelWorkers)
+		batchMaxRisk := runBatchAnalyze(db, packages, parallelWorkers)
+		if batchMaxRisk > maxRisk {
+			maxRisk = batchMaxRisk
+		}
 	}
 
 	elapsed := time.Since(scanStart)
@@ -447,6 +459,12 @@ func runScan(projectPath string) {
 	}
 	fmt.Printf("  Duration: %v\n", elapsed.Round(time.Second))
 	fmt.Println("═══════════════════════════════════════════════════════════")
+
+	// Check fail-above threshold
+	if failAbove >= 0 && maxRisk > failAbove {
+		fmt.Printf("\n  [!] FAILED: Max risk score %d exceeds threshold %d\n", maxRisk, failAbove)
+		os.Exit(1)
+	}
 }
 
 // clampWorkers ensures parallel is between 1 and totalJobs.
@@ -460,15 +478,15 @@ func clampWorkers(parallel, totalJobs int) int {
 	return parallel
 }
 
-func runBatchAnalyze(db *store.Store, packages []*resolver.ResolvedPackage, parallel int) {
+func runBatchAnalyze(db *store.Store, packages []*resolver.ResolvedPackage, parallel int) int {
 	// Pre-flight checks
 	if err := sandbox.CheckDocker(); err != nil {
 		fmt.Fprintf(os.Stderr, "\nError: Docker not available for analysis: %v\n", err)
-		return
+		return 0
 	}
 	if !sandbox.ImageExists() {
 		fmt.Fprintf(os.Stderr, "\nError: Sandbox image not found. Run 'vigil build-image' first.\n")
-		return
+		return 0
 	}
 
 	// Filter to unanalyzed packages
@@ -482,7 +500,7 @@ func runBatchAnalyze(db *store.Store, packages []*resolver.ResolvedPackage, para
 
 	if len(toAnalyze) == 0 {
 		fmt.Println("\n  All packages already analyzed.")
-		return
+		return 0
 	}
 
 	parallel = clampWorkers(parallel, len(toAnalyze))
@@ -549,6 +567,7 @@ func runBatchAnalyze(db *store.Store, packages []*resolver.ResolvedPackage, para
 	completed := 0
 	total := len(toAnalyze)
 	startTime := time.Now()
+	maxRisk := 0
 
 	for r := range resultsCh {
 		completed++
@@ -567,6 +586,11 @@ func runBatchAnalyze(db *store.Store, packages []*resolver.ResolvedPackage, para
 
 		allResults = append(allResults, r.report)
 
+		// Track max risk score
+		if r.report.RiskScore > maxRisk {
+			maxRisk = r.report.RiskScore
+		}
+
 		avgPerPkg := elapsed / time.Duration(completed)
 		remaining := avgPerPkg * time.Duration(total-completed)
 		fmt.Printf("\n  [%d/%d] %s@%s Risk: %d/100 [%s] (ETA: %v)",
@@ -577,6 +601,7 @@ func runBatchAnalyze(db *store.Store, packages []*resolver.ResolvedPackage, para
 
 	totalElapsed := time.Since(startTime)
 	printRiskSummary(allResults, failed, totalElapsed)
+	return maxRisk
 }
 
 func printRiskSummary(results []*analyzer.AnalysisReport, failed []string, elapsed time.Duration) {
@@ -866,6 +891,7 @@ func init() {
 	scanCmd.Flags().IntVar(&timeout, "timeout", 60, "Analysis timeout per package in seconds")
 	scanCmd.Flags().IntVar(&parallelWorkers, "parallel", 4, "Number of packages to analyze concurrently (high values need more Docker resources)")
 	scanCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output results as JSON")
+	scanCmd.Flags().IntVar(&failAbove, "fail-above", -1, "Exit with code 1 if any package exceeds this risk score (disabled by default)")
 
 	// Analyze flags
 	analyzeCmd.Flags().IntVarP(&timeout, "timeout", "t", 60, "Analysis timeout in seconds")
