@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -122,6 +123,17 @@ func TestNoColorFlag_Registered(t *testing.T) {
 	}
 	if f.DefValue != "false" {
 		t.Errorf("--no-color default = %q, want %q", f.DefValue, "false")
+	}
+}
+
+func TestScanCmd_HelpMentionsCtrlC(t *testing.T) {
+	// Verify that the help text mentions Ctrl+C for graceful cancellation
+	longDesc := scanCmd.Long
+	if longDesc == "" {
+		t.Fatal("scanCmd.Long is empty")
+	}
+	if !strings.Contains(longDesc, "Ctrl+C") {
+		t.Error("scanCmd.Long does not mention Ctrl+C for graceful cancellation")
 	}
 }
 
