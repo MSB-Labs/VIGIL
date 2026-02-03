@@ -1,10 +1,13 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/MSB-Labs/vigil/internal/analyzer"
@@ -73,6 +76,8 @@ This command will:
 
 Use --analyze to automatically analyze all unanalyzed packages.
 Use --parallel N to run N analyses concurrently (default 4).
+Press Ctrl+C during analysis to cancel gracefully (in-progress analyses
+will complete and results will be saved before exiting).
 
 Examples:
   vigil scan                           Scan current directory
@@ -490,7 +495,19 @@ func runBatchAnalyze(db *store.Store, packages []*resolver.ResolvedPackage, para
 	fmt.Println()
 	fmt.Println("───────────────────────────────────────────────────────────")
 	fmt.Printf("  Analyzing %d packages (%d workers)...\n", len(toAnalyze), parallel)
+	fmt.Println("  Press Ctrl+C to cancel gracefully")
 	fmt.Println("───────────────────────────────────────────────────────────")
+
+	// Set up cancellation context with signal handling
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(sigCh)
+
+	// Track if cancelled
+	cancelled := false
 
 	type analyzeJob struct {
 		index int
@@ -519,6 +536,13 @@ func runBatchAnalyze(db *store.Store, packages []*resolver.ResolvedPackage, para
 			a := analyzer.New()
 			sb := sandbox.New(cfg)
 			for job := range jobs {
+				// Check if cancelled before starting analysis
+				select {
+				case <-ctx.Done():
+					return
+				default:
+				}
+
 				result, err := sb.AnalyzePackage(job.pkg.Name, job.pkg.ResolvedVersion)
 				if err != nil {
 					resultsCh <- analyzeResult{pkg: job.pkg, err: err}
@@ -531,11 +555,18 @@ func runBatchAnalyze(db *store.Store, packages []*resolver.ResolvedPackage, para
 		}()
 	}
 
-	// Send all jobs
-	for i, pkg := range toAnalyze {
-		jobs <- analyzeJob{index: i, pkg: pkg}
-	}
-	close(jobs)
+	// Send jobs in a goroutine so we can handle signals
+	go func() {
+		for i, pkg := range toAnalyze {
+			select {
+			case <-ctx.Done():
+				close(jobs)
+				return
+			case jobs <- analyzeJob{index: i, pkg: pkg}:
+			}
+		}
+		close(jobs)
+	}()
 
 	// Close results channel once all workers finish
 	go func() {
@@ -550,32 +581,63 @@ func runBatchAnalyze(db *store.Store, packages []*resolver.ResolvedPackage, para
 	total := len(toAnalyze)
 	startTime := time.Now()
 
-	for r := range resultsCh {
-		completed++
-		elapsed := time.Since(startTime)
+resultLoop:
+	for {
+		select {
+		case <-sigCh:
+			cancelled = true
+			fmt.Printf("\n\n  Cancelling... waiting for in-progress analyses to finish.\n")
+			cancel()
+			// Drain remaining results from workers already running
+			for r := range resultsCh {
+				completed++
+				if r.err != nil {
+					failed = append(failed, fmt.Sprintf("%s@%s", r.pkg.Name, r.pkg.ResolvedVersion))
+				} else {
+					if err := db.SaveFingerprint(r.report.Fingerprint); err != nil {
+						fmt.Fprintf(os.Stderr, "\n  (save failed for %s@%s: %v)", r.pkg.Name, r.pkg.ResolvedVersion, err)
+					}
+					allResults = append(allResults, r.report)
+				}
+			}
+			break resultLoop
 
-		if r.err != nil {
-			fmt.Printf("\n  [%d/%d] %s@%s FAILED: %v",
-				completed, total, r.pkg.Name, r.pkg.ResolvedVersion, r.err)
-			failed = append(failed, fmt.Sprintf("%s@%s", r.pkg.Name, r.pkg.ResolvedVersion))
-			continue
+		case r, ok := <-resultsCh:
+			if !ok {
+				break resultLoop
+			}
+			completed++
+			elapsed := time.Since(startTime)
+
+			if r.err != nil {
+				fmt.Printf("\n  [%d/%d] %s@%s FAILED: %v",
+					completed, total, r.pkg.Name, r.pkg.ResolvedVersion, r.err)
+				failed = append(failed, fmt.Sprintf("%s@%s", r.pkg.Name, r.pkg.ResolvedVersion))
+				continue
+			}
+
+			if err := db.SaveFingerprint(r.report.Fingerprint); err != nil {
+				fmt.Fprintf(os.Stderr, "\n  (save failed for %s@%s: %v)", r.pkg.Name, r.pkg.ResolvedVersion, err)
+			}
+
+			allResults = append(allResults, r.report)
+
+			avgPerPkg := elapsed / time.Duration(completed)
+			remaining := avgPerPkg * time.Duration(total-completed)
+			fmt.Printf("\n  [%d/%d] %s@%s Risk: %d/100 [%s] (ETA: %v)",
+				completed, total, r.pkg.Name, r.pkg.ResolvedVersion,
+				r.report.RiskScore, colorutil.ColorizeRiskLevel(r.report.RiskLevel),
+				remaining.Round(time.Second))
 		}
-
-		if err := db.SaveFingerprint(r.report.Fingerprint); err != nil {
-			fmt.Fprintf(os.Stderr, "\n  (save failed for %s@%s: %v)", r.pkg.Name, r.pkg.ResolvedVersion, err)
-		}
-
-		allResults = append(allResults, r.report)
-
-		avgPerPkg := elapsed / time.Duration(completed)
-		remaining := avgPerPkg * time.Duration(total-completed)
-		fmt.Printf("\n  [%d/%d] %s@%s Risk: %d/100 [%s] (ETA: %v)",
-			completed, total, r.pkg.Name, r.pkg.ResolvedVersion,
-			r.report.RiskScore, colorutil.ColorizeRiskLevel(r.report.RiskLevel),
-			remaining.Round(time.Second))
 	}
 
 	totalElapsed := time.Since(startTime)
+
+	if cancelled {
+		skipped := total - completed
+		fmt.Printf("\n  Cancelled. Analyzed %d/%d packages (%d skipped).\n", completed, total, skipped)
+	}
+
 	printRiskSummary(allResults, failed, totalElapsed)
 }
 
