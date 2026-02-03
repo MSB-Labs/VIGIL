@@ -125,3 +125,13 @@ func TestNoColorFlag_Registered(t *testing.T) {
 	}
 }
 
+func TestFailAboveFlag_Registered(t *testing.T) {
+	// Verify the --fail-above flag exists on scanCmd and defaults to -1 (disabled).
+	f := scanCmd.Flags().Lookup("fail-above")
+	if f == nil {
+		t.Fatal("--fail-above flag not registered on scan command")
+	}
+	if f.DefValue != "-1" {
+		t.Errorf("--fail-above default = %q, want %q", f.DefValue, "-1")
+	}
+}
