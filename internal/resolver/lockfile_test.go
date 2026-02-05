@@ -46,6 +46,9 @@ func TestDetectLockfile(t *testing.T) {
 	if lockType != LockfilePnpm {
 		t.Errorf("Expected LockfilePnpm, got %v", lockType)
 	}
+	if lockPath != pnpmLock {
+		t.Errorf("Expected %s, got %s", pnpmLock, lockPath)
+	}
 
 	// Remove pnpm-lock.yaml and test package-lock.json detection
 	os.Remove(pnpmLock)
@@ -56,6 +59,9 @@ func TestDetectLockfile(t *testing.T) {
 	lockType, lockPath = DetectLockfile(tmpDir)
 	if lockType != LockfileNPM {
 		t.Errorf("Expected LockfileNPM, got %v", lockType)
+	}
+	if lockPath != npmLock {
+		t.Errorf("Expected %s, got %s", npmLock, lockPath)
 	}
 }
 
