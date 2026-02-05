@@ -35,6 +35,7 @@ type TreeResolver struct {
 	skipped  []SkippedDependency
 	mu       sync.Mutex
 	maxDepth int
+	lockfile *Lockfile // optional lockfile for exact version resolution
 }
 
 // NewTreeResolver creates a new dependency tree resolver
@@ -44,6 +45,24 @@ func NewTreeResolver(maxDepth int) *TreeResolver {
 		resolved: make(map[string]*ResolvedPackage),
 		maxDepth: maxDepth,
 	}
+}
+
+// SetLockfile sets the lockfile to use for exact version resolution
+func (r *TreeResolver) SetLockfile(lockfile *Lockfile) {
+	r.lockfile = lockfile
+}
+
+// HasLockfile returns true if a lockfile is set
+func (r *TreeResolver) HasLockfile() bool {
+	return r.lockfile != nil
+}
+
+// GetLockfileType returns the type of lockfile being used
+func (r *TreeResolver) GetLockfileType() LockfileType {
+	if r.lockfile == nil {
+		return LockfileNone
+	}
+	return r.lockfile.Type
 }
 
 // Resolve builds the complete dependency tree for a project
@@ -153,6 +172,13 @@ func (r *TreeResolver) resolveDependency(name, versionConstraint, parent string,
 
 // resolveVersion converts a version constraint to an actual version
 func (r *TreeResolver) resolveVersion(name, constraint string) (string, error) {
+	// Check lockfile first for exact version
+	if r.lockfile != nil {
+		if lockedVersion, found := r.lockfile.GetLockedVersion(name, constraint); found {
+			return lockedVersion, nil
+		}
+	}
+
 	// Handle "latest" tag or empty constraint
 	if constraint == "latest" || constraint == "*" || constraint == "" {
 		return r.client.GetLatestVersion(name)
