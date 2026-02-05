@@ -222,12 +222,31 @@ func runScan(projectPath string) {
 		fmt.Println()
 	}
 
+	// Detect and load lockfile
+	lockType, lockPath := resolver.DetectLockfile(projectPath)
+	var lockfile *resolver.Lockfile
+	if lockType != resolver.LockfileNone {
+		lockfile, err = resolver.ParseLockfile(lockPath, lockType)
+		if err != nil {
+			if !jsonOutput {
+				fmt.Fprintf(os.Stderr, "Warning: Could not parse %s: %v\n", resolver.LockfileTypeName(lockType), err)
+				fmt.Fprintf(os.Stderr, "Falling back to registry resolution...\n\n")
+			}
+			lockfile = nil
+		} else if !jsonOutput {
+			fmt.Printf("Lockfile: %s (%d packages)\n\n", resolver.LockfileTypeName(lockType), len(lockfile.Packages))
+		}
+	}
+
 	// Resolve dependency tree
 	if !jsonOutput {
 		fmt.Println("Resolving dependency tree...")
 	}
 
 	treeResolver := resolver.NewTreeResolver(maxDepth)
+	if lockfile != nil {
+		treeResolver.SetLockfile(lockfile)
+	}
 	var packages []*resolver.ResolvedPackage
 
 	if isWorkspace {
