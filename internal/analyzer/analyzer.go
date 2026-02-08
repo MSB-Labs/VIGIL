@@ -90,6 +90,12 @@ func (a *Analyzer) AnalyzeResultWithEcosystem(result *sandbox.ExecutionResult, p
 
 // Analyze processes behavior data against rules
 func (a *Analyzer) Analyze(data *BehaviorData) *AnalysisReport {
+	// Ensure ecosystem is set (default to "npm" for backward compatibility)
+	ecosystem := data.Ecosystem
+	if ecosystem == "" {
+		ecosystem = "npm"
+	}
+
 	// Run rule matching
 	matches := a.rules.Analyze(data)
 
@@ -125,7 +131,7 @@ func (a *Analyzer) Analyze(data *BehaviorData) *AnalysisReport {
 	fingerprint := &store.BehaviorFingerprint{
 		PackageName:     data.PackageName,
 		Version:         data.Version,
-		Ecosystem:       data.Ecosystem,
+		Ecosystem:       ecosystem,
 		NetworkCalls:    data.NetworkCalls,
 		FileWrites:      data.FileWrites,
 		EnvVarsRead:     data.EnvVarsRead,
