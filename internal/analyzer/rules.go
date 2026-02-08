@@ -58,6 +58,7 @@ type RuleMatch struct {
 type BehaviorData struct {
 	PackageName     string
 	Version         string
+	Ecosystem       string // "npm" or "pypi"
 	NetworkCalls    []string
 	FileReads       []string
 	FileWrites      []string
