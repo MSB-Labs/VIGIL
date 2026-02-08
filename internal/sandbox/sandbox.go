@@ -19,6 +19,7 @@ const (
 
 	// SandboxImage is the Docker image used for analysis
 	SandboxImage = "vigil-sandbox:latest"
+	SandboxPythonImage = "vigil-python-sandbox:latest"
 
 	// EmbeddedDockerfile is the built-in Dockerfile for the sandbox image
 	EmbeddedDockerfile = `FROM node:20-alpine
@@ -29,6 +30,17 @@ USER vigil
 ENV NPM_CONFIG_UPDATE_NOTIFIER=false
 ENV NPM_CONFIG_FUND=false
 ENV NO_UPDATE_NOTIFIER=1
+CMD ["/bin/bash"]
+`
+
+	// EmbeddedPythonDockerfile is the built-in Dockerfile for Python sandbox
+	EmbeddedPythonDockerfile = `FROM python:3.11-alpine
+RUN apk add --no-cache bash grep findutils coreutils curl
+RUN adduser -D -s /bin/bash vigil
+WORKDIR /home/vigil
+USER vigil
+ENV PIP_NO_CACHE_DIR=1
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1
 CMD ["/bin/bash"]
 `
 )
@@ -127,6 +139,43 @@ func BuildImageFromDefault() error {
 func ImageExists() bool {
 	cmd := exec.Command("docker", "image", "inspect", SandboxImage)
 	return cmd.Run() == nil
+}
+
+// PythonImageExists checks if the Python sandbox image exists
+func PythonImageExists() bool {
+	cmd := exec.Command("docker", "image", "inspect", SandboxPythonImage)
+	return cmd.Run() == nil
+}
+
+// BuildPythonImage builds the Python sandbox Docker image
+func BuildPythonImage(dockerfilePath string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "docker", "build", "-t", SandboxPythonImage, "-f", dockerfilePath, ".")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to build Python sandbox image: %w\n%s", err, stderr.String())
+	}
+	return nil
+}
+
+// BuildPythonImageFromDefault builds the Python sandbox image using the embedded Dockerfile
+func BuildPythonImageFromDefault() error {
+	tmpDir, err := os.MkdirTemp("", "vigil-python-build-*")
+	if err != nil {
+		return fmt.Errorf("failed to create temp directory: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	dockerfilePath := filepath.Join(tmpDir, "Dockerfile")
+	if err := os.WriteFile(dockerfilePath, []byte(EmbeddedPythonDockerfile), 0644); err != nil {
+		return fmt.Errorf("failed to write Python Dockerfile: %w", err)
+	}
+
+	return BuildPythonImage(dockerfilePath)
 }
 
 // AnalyzePackage runs a package in the sandbox and captures behavior
@@ -322,6 +371,204 @@ npm view %s@%s scripts --json 2>/dev/null || echo "{}"
 	hasRisk := strings.Contains(output, "preinstall") ||
 		strings.Contains(output, "postinstall") ||
 		strings.Contains(output, "install")
+
+	return hasRisk, output, nil
+}
+
+// AnalyzePythonPackage runs a Python package in the sandbox and captures behavior
+func (s *Sandbox) AnalyzePythonPackage(packageName, version string) (*ExecutionResult, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), s.timeout)
+	defer cancel()
+
+	start := time.Now()
+	result := &ExecutionResult{}
+
+	// Create container with the analysis script
+	script := fmt.Sprintf(`
+set -e
+echo "=== VIGIL PYTHON ANALYSIS START ==="
+echo "Package: %s@%s"
+echo "Timestamp: $(date -u +%%Y-%%m-%%dT%%H:%%M:%%SZ)"
+
+# Create temp directory for installation
+mkdir -p /tmp/python-test
+cd /tmp/python-test
+
+# Capture network calls using a simple DNS log
+echo "=== INSTALL START ==="
+
+# Install the package and capture output
+pip install %s==%s 2>&1 | tee /tmp/install.log
+
+echo "=== INSTALL END ==="
+
+# Check for setup.py and pyproject.toml
+echo "=== SETUP CHECK ==="
+find . -name "setup.py" -o -name "pyproject.toml" 2>/dev/null || true
+
+# List files created
+echo "=== FILES CREATED ==="
+find . -type f -name "*.py" | head -50
+
+# Detect suspicious patterns by category
+echo "=== SUSPICIOUS PATTERNS ==="
+
+echo "--- SHELL_ACCESS ---"
+grep -r 'subprocess\|os\.system\|os\.popen' . --include="*.py" 2>/dev/null | head -10 || true
+
+echo "--- DYNAMIC_CODE ---"
+grep -r 'eval(\|exec(\|compile(' . --include="*.py" 2>/dev/null | head -10 || true
+
+echo "--- ENV_ACCESS ---"
+grep -r 'os\.environ\|getenv' . --include="*.py" 2>/dev/null | head -10 || true
+
+echo "--- SENSITIVE_FILES ---"
+grep -r '/etc/passwd\|/etc/shadow\|\.ssh/\|\.aws/\|\.pythonrc' . --include="*.py" 2>/dev/null | head -10 || true
+
+echo "--- NETWORK_ACCESS ---"
+grep -r 'requests\|urllib\|socket\|http' . --include="*.py" 2>/dev/null | head -10 || true
+
+echo "=== END SUSPICIOUS ==="
+
+echo "=== VIGIL PYTHON ANALYSIS END ==="
+`, packageName, version, packageName, version)
+
+	// Run container
+	args := []string{
+		"run",
+		"--rm",
+		"--network=bridge", // Allow network for now (to capture calls)
+		"--memory=512m",
+		"--cpus=1.0",
+		"--security-opt=no-new-privileges",
+		SandboxPythonImage,
+		"/bin/sh", "-c", script,
+	}
+
+	cmd := exec.CommandContext(ctx, "docker", args...)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	result.Duration = time.Since(start)
+	result.Stdout = stdout.String()
+	result.Stderr = stderr.String()
+
+	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			result.Error = fmt.Errorf("Python analysis timed out after %v", s.timeout)
+		} else {
+			result.Error = err
+		}
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			result.ExitCode = exitErr.ExitCode()
+		} else {
+			result.ExitCode = -1
+		}
+	}
+
+	// Parse output for behavioral indicators
+	s.parsePythonOutput(result)
+
+	return result, nil
+}
+
+// parsePythonOutput extracts behavioral data from the Python analysis output
+func (s *Sandbox) parsePythonOutput(result *ExecutionResult) {
+	lines := strings.Split(result.Stdout, "\n")
+	result.SuspiciousFiles = make(map[string][]string)
+
+	inSection := ""
+	suspiciousCategory := ""
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+
+		// Track sections
+		switch line {
+		case "=== SETUP CHECK ===":
+			inSection = "setup"
+			continue
+		case "=== FILES CREATED ===":
+			inSection = "files"
+			continue
+		case "=== SUSPICIOUS PATTERNS ===":
+			inSection = "suspicious"
+			continue
+		case "=== END SUSPICIOUS ===":
+			inSection = ""
+			suspiciousCategory = ""
+			continue
+		case "=== INSTALL START ===", "=== INSTALL END ===", "=== VIGIL PYTHON ANALYSIS START ===", "=== VIGIL PYTHON ANALYSIS END ===":
+			inSection = ""
+			continue
+		}
+
+		// Track suspicious subcategories
+		if inSection == "suspicious" {
+			switch line {
+			case "--- SHELL_ACCESS ---":
+				suspiciousCategory = "shell_access"
+				continue
+			case "--- DYNAMIC_CODE ---":
+				suspiciousCategory = "dynamic_code"
+				continue
+			case "--- ENV_ACCESS ---":
+				suspiciousCategory = "env_access"
+				continue
+			case "--- SENSITIVE_FILES ---":
+				suspiciousCategory = "sensitive_files"
+				continue
+			case "--- NETWORK_ACCESS ---":
+				suspiciousCategory = "network_access"
+				continue
+			}
+		}
+
+		if line == "" {
+			continue
+		}
+
+		switch inSection {
+		case "setup":
+			if strings.Contains(line, "setup.py") || strings.Contains(line, "pyproject.toml") {
+				result.Commands = append(result.Commands, line)
+			}
+		case "files":
+			result.FilesWritten = append(result.FilesWritten, line)
+		case "suspicious":
+			if suspiciousCategory != "" && strings.HasPrefix(line, ".") {
+				result.SuspiciousFiles[suspiciousCategory] = append(
+					result.SuspiciousFiles[suspiciousCategory], line)
+			}
+		}
+	}
+}
+
+// QuickCheckPython runs a lightweight check for Python packages
+func (s *Sandbox) QuickCheckPython(packageName, version string) (bool, string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Quick check: just fetch package info
+	script := fmt.Sprintf(`
+pip show %s 2>/dev/null || echo "Package not found"
+`, packageName)
+
+	cmd := exec.CommandContext(ctx, "docker", "run", "--rm", "--network=bridge",
+		SandboxPythonImage, "/bin/sh", "-c", script)
+
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+
+	if err := cmd.Run(); err != nil {
+		return false, "", err
+	}
+
+	output := stdout.String()
+	hasRisk := strings.Contains(output, "setup.py") ||
+		strings.Contains(output, "pyproject.toml")
 
 	return hasRisk, output, nil
 }

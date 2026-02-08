@@ -110,7 +110,7 @@ Shows:
 var analyzeCmd = &cobra.Command{
 	Use:   "analyze <package>[@version]",
 	Short: "Analyze a single package in the sandbox",
-	Long: `Run deep behavioral analysis on a single npm package.
+	Long: `Run deep behavioral analysis on a single package.
 
 The package will be installed and executed in an isolated Docker container.
 VIGIL captures behavior and matches against 14 detection rules covering:
@@ -124,9 +124,11 @@ VIGIL captures behavior and matches against 14 detection rules covering:
 The analysis results are saved to the local fingerprint database.
 
 Examples:
-  vigil analyze lodash           Analyze latest version
-  vigil analyze lodash@4.17.21   Analyze specific version
-  vigil analyze @types/node      Analyze scoped package
+  vigil analyze lodash           Analyze latest version (npm)
+  vigil analyze lodash@4.17.21   Analyze specific version (npm)
+  vigil analyze @types/node      Analyze scoped package (npm)
+  vigil analyze requests         Analyze Python package
+  vigil analyze requests==2.28.0 Analyze specific Python version
   vigil analyze express -t 120   Set 120 second timeout
   vigil analyze lodash --json    Output as JSON`,
 	Args: cobra.ExactArgs(1),
@@ -150,6 +152,24 @@ Requirements:
 The image will be tagged as 'vigil-sandbox:latest'.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		runBuildImage()
+	},
+}
+
+var buildPythonImageCmd = &cobra.Command{
+	Use:   "build-python-image",
+	Short: "Build the Python sandbox Docker image",
+	Long: `Build the Docker image used for Python package analysis.
+
+This command must be run before using 'vigil analyze' with Python packages.
+The image is based on Python Alpine and includes tools for behavioral analysis.
+
+Requirements:
+  - Docker must be installed and running
+  - Internet connection (to pull base image)
+
+The image will be tagged as 'vigil-python-sandbox:latest'.`,
+	Run: func(cmd *cobra.Command, args []string) {
+		runBuildPythonImage()
 	},
 }
 
@@ -720,6 +740,9 @@ func runAnalyze(packageArg string) {
 	// Parse package@version
 	packageName, packageVersion := parsePackageArg(packageArg)
 
+	// Detect ecosystem (npm vs pypi)
+	ecosystem := detectEcosystem(packageName)
+	
 	// Apply no-color flag
 	if noColor {
 		colorutil.ApplyNoColor()
@@ -732,6 +755,7 @@ func runAnalyze(packageArg string) {
 		fmt.Println()
 		fmt.Printf("Package:  %s\n", packageName)
 		fmt.Printf("Version:  %s\n", packageVersion)
+		fmt.Printf("Ecosystem: %s\n", ecosystem)
 		fmt.Println()
 	}
 
@@ -743,17 +767,25 @@ func runAnalyze(packageArg string) {
 	}
 
 	// Check sandbox image
-	if !sandbox.ImageExists() {
-		fmt.Fprintf(os.Stderr, "Error: Sandbox image not found.\n")
-		fmt.Fprintf(os.Stderr, "Run 'vigil build-image' first to build the sandbox.\n")
-		os.Exit(1)
+	if ecosystem == "pypi" {
+		if !sandbox.PythonImageExists() {
+			fmt.Fprintf(os.Stderr, "Error: Python sandbox image not found.\n")
+			fmt.Fprintf(os.Stderr, "Run 'vigil build-python-image' first to build the Python sandbox.\n")
+			os.Exit(1)
+		}
+	} else {
+		if !sandbox.ImageExists() {
+			fmt.Fprintf(os.Stderr, "Error: Sandbox image not found.\n")
+			fmt.Fprintf(os.Stderr, "Run 'vigil build-image' first to build the sandbox.\n")
+			os.Exit(1)
+		}
 	}
 
 	// Initialize store
-	db, err := store.New(dbPath)
-	if err != nil {
+	db, dbErr := store.New(dbPath)
+	if dbErr != nil {
 		if !jsonOutput {
-			fmt.Fprintf(os.Stderr, "Warning: Could not open database: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Warning: Could not open database: %v\n", dbErr)
 		}
 		db = nil
 	} else {
@@ -762,7 +794,7 @@ func runAnalyze(packageArg string) {
 
 	// Check cache
 	if db != nil && !jsonOutput {
-		exists, _ := db.HasFingerprint(packageName, packageVersion, "npm")
+		exists, _ := db.HasFingerprint(packageName, packageVersion, ecosystem)
 		if exists {
 			fmt.Println("Note: Package already analyzed. Re-analyzing...")
 		}
@@ -780,7 +812,15 @@ func runAnalyze(packageArg string) {
 	}
 	sb := sandbox.New(cfg)
 
-	result, err := sb.AnalyzePackage(packageName, packageVersion)
+	var result *sandbox.ExecutionResult
+	var err error
+
+	if ecosystem == "pypi" {
+		result, err = sb.AnalyzePythonPackage(packageName, packageVersion)
+	} else {
+		result, err = sb.AnalyzePackage(packageName, packageVersion)
+	}
+
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error during analysis: %v\n", err)
 		os.Exit(1)
@@ -788,7 +828,7 @@ func runAnalyze(packageArg string) {
 
 	// Run through analyzer engine (rule matching + risk scoring)
 	a := analyzer.New()
-	report := a.AnalyzeResult(result, packageName, packageVersion)
+	report := a.AnalyzeResultWithEcosystem(result, packageName, packageVersion, ecosystem)
 
 	// JSON output path
 	if jsonOutput {
@@ -851,6 +891,53 @@ func runAnalyze(packageArg string) {
 	fmt.Println("═══════════════════════════════════════════════════════════")
 }
 
+// detectEcosystem determines if a package is npm or pypi based on common naming patterns
+func detectEcosystem(packageName string) string {
+	// Python packages often have underscores or specific naming patterns
+	// This is a simple heuristic - in a real implementation, you might want
+	// to check against known package registries
+	if strings.Contains(packageName, "_") || 
+	   strings.HasPrefix(packageName, "py") ||
+	   strings.HasSuffix(packageName, "py") {
+		return "pypi"
+	}
+	
+	// Check if it's a known Python package name
+	pythonPackages := map[string]bool{
+		"requests": true,
+		"numpy": true,
+		"pandas": true,
+		"django": true,
+		"flask": true,
+		"scipy": true,
+		"matplotlib": true,
+		"pillow": true,
+		"beautifulsoup4": true,
+		"scrapy": true,
+		"tensorflow": true,
+		"keras": true,
+		"pytorch": true,
+		"opencv-python": true,
+		"pytest": true,
+		"black": true,
+		"flake8": true,
+		"mypy": true,
+		"urllib3": true,
+		"certifi": true,
+		"charset-normalizer": true,
+		"idna": true,
+		"pip": true,
+		"setuptools": true,
+		"wheel": true,
+	}
+	
+	if pythonPackages[packageName] {
+		return "pypi"
+	}
+	
+	return "npm"
+}
+
 func runBuildImage() {
 	fmt.Println("═══════════════════════════════════════════════════════════")
 	fmt.Println("  VIGIL - Building Sandbox Image")
@@ -875,6 +962,34 @@ func runBuildImage() {
 	fmt.Println()
 	fmt.Println("Sandbox image built successfully!")
 	fmt.Println("  Image: vigil-sandbox:latest")
+	fmt.Println()
+	fmt.Println("═══════════════════════════════════════════════════════════")
+}
+
+func runBuildPythonImage() {
+	fmt.Println("═══════════════════════════════════════════════════════════")
+	fmt.Println("  VIGIL - Building Python Sandbox Image")
+	fmt.Println("═══════════════════════════════════════════════════════════")
+	fmt.Println()
+
+	// Check Docker
+	if err := sandbox.CheckDocker(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Please ensure Docker is installed and running.\n")
+		os.Exit(1)
+	}
+
+	fmt.Println("Building Python sandbox image...")
+	fmt.Println()
+
+	if err := sandbox.BuildPythonImageFromDefault(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Println()
+	fmt.Println("Python sandbox image built successfully!")
+	fmt.Println("  Image: vigil-python-sandbox:latest")
 	fmt.Println()
 	fmt.Println("═══════════════════════════════════════════════════════════")
 }
@@ -921,6 +1036,7 @@ func init() {
 	rootCmd.AddCommand(statsCmd)
 	rootCmd.AddCommand(analyzeCmd)
 	rootCmd.AddCommand(buildImageCmd)
+	rootCmd.AddCommand(buildPythonImageCmd)
 }
 
 func Execute() error {

@@ -254,4 +254,89 @@ rules:
         values:
           - "https://"
     tags: [network, https]
+
+  # ============================================
+  # PYTHON-SPECIFIC RULES
+  # ============================================
+
+  - id: python-setup-py-exec
+    name: "setup.py Code Execution"
+    description: "Python package executes code in setup.py during installation"
+    severity: high
+    category: install
+    enabled: true
+    conditions:
+      - type: script
+        operator: contains
+        values:
+          - "setup.py"
+          - "pyproject.toml"
+    tags: [python, setup]
+
+  - id: python-subprocess-exec
+    name: "Python Subprocess Execution"
+    description: "Python package uses subprocess to execute shell commands"
+    severity: high
+    category: shell
+    enabled: true
+    conditions:
+      - type: suspicious
+        operator: contains
+        values:
+          - "subprocess."
+          - "os.system("
+          - "os.popen("
+          - "exec("
+          - "eval("
+    tags: [python, subprocess]
+
+  - id: python-requests-network
+    name: "Python Network Requests"
+    description: "Python package makes network requests during installation"
+    severity: medium
+    category: network
+    enabled: true
+    conditions:
+      - type: suspicious
+        operator: contains
+        values:
+          - "requests."
+          - "urllib."
+          - "urllib2."
+          - "http.client"
+          - "socket."
+    tags: [python, network]
+
+  - id: python-env-access
+    name: "Python Environment Access"
+    description: "Python package accesses environment variables"
+    severity: medium
+    category: env
+    enabled: true
+    conditions:
+      - type: suspicious
+        operator: contains
+        values:
+          - "os.environ"
+          - "os.getenv"
+          - "getenv"
+    tags: [python, env]
+
+  - id: python-file-access
+    name: "Python File System Access"
+    description: "Python package accesses sensitive files during installation"
+    severity: medium
+    category: filesystem
+    enabled: true
+    conditions:
+      - type: suspicious
+        operator: contains
+        values:
+          - "/etc/passwd"
+          - "/etc/shadow"
+          - ".ssh/"
+          - ".aws/"
+          - ".pythonrc"
+          - ".piprc"
+    tags: [python, filesystem]
 `

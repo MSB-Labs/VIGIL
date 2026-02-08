@@ -3,9 +3,10 @@ module github.com/MSB-Labs/vigil
 go 1.21
 
 require (
-	github.com/fatih/color v1.18.0
 	github.com/Masterminds/semver/v3 v3.4.0
+	github.com/fatih/color v1.18.0
 	github.com/mattn/go-sqlite3 v1.14.22
+	github.com/pelletier/go-toml v1.9.5
 	github.com/spf13/cobra v1.8.0
 	gopkg.in/yaml.v3 v3.0.1
 )

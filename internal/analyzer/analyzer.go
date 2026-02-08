@@ -54,6 +54,11 @@ func NewWithRules(rules *RuleSet) *Analyzer {
 
 // AnalyzeResult processes sandbox execution results
 func (a *Analyzer) AnalyzeResult(result *sandbox.ExecutionResult, packageName, version string) *AnalysisReport {
+	return a.AnalyzeResultWithEcosystem(result, packageName, version, "npm")
+}
+
+// AnalyzeResultWithEcosystem processes sandbox execution results with ecosystem info
+func (a *Analyzer) AnalyzeResultWithEcosystem(result *sandbox.ExecutionResult, packageName, version, ecosystem string) *AnalysisReport {
 	// Flatten SuspiciousFiles map into a single slice for rule matching
 	var suspiciousFiles []string
 	for _, files := range result.SuspiciousFiles {
@@ -70,6 +75,7 @@ func (a *Analyzer) AnalyzeResult(result *sandbox.ExecutionResult, packageName, v
 	data := &BehaviorData{
 		PackageName:     packageName,
 		Version:         version,
+		Ecosystem:       ecosystem,
 		NetworkCalls:    result.NetworkCalls,
 		FileWrites:      result.FilesWritten,
 		EnvVarsRead:     envVars,
@@ -119,7 +125,7 @@ func (a *Analyzer) Analyze(data *BehaviorData) *AnalysisReport {
 	fingerprint := &store.BehaviorFingerprint{
 		PackageName:     data.PackageName,
 		Version:         data.Version,
-		Ecosystem:       "npm",
+		Ecosystem:       data.Ecosystem,
 		NetworkCalls:    data.NetworkCalls,
 		FileWrites:      data.FileWrites,
 		EnvVarsRead:     data.EnvVarsRead,

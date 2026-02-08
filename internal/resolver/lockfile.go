@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/pelletier/go-toml"
 	"gopkg.in/yaml.v3"
 )
 
@@ -20,6 +21,10 @@ const (
 	LockfileYarn
 	LockfilePnpm
 	LockfileNPM
+	LockfilePip
+	LockfilePipenv
+	LockfilePoetry
+	LockfileConda
 )
 
 // LockedPackage represents a package with its exact resolved version from a lockfile
@@ -37,8 +42,9 @@ type Lockfile struct {
 }
 
 // DetectLockfile checks for lockfiles in the project directory
-// Priority: yarn.lock > pnpm-lock.yaml > package-lock.json
+// Priority: yarn.lock > pnpm-lock.yaml > package-lock.json > poetry.lock > Pipfile.lock > requirements.txt
 func DetectLockfile(projectPath string) (LockfileType, string) {
+	// JavaScript/Node.js lockfiles
 	yarnLock := filepath.Join(projectPath, "yarn.lock")
 	if _, err := os.Stat(yarnLock); err == nil {
 		return LockfileYarn, yarnLock
@@ -54,6 +60,23 @@ func DetectLockfile(projectPath string) (LockfileType, string) {
 		return LockfileNPM, npmLock
 	}
 
+	// Python lockfiles
+	poetryLock := filepath.Join(projectPath, "poetry.lock")
+	if _, err := os.Stat(poetryLock); err == nil {
+		return LockfilePoetry, poetryLock
+	}
+
+	pipenvLock := filepath.Join(projectPath, "Pipfile.lock")
+	if _, err := os.Stat(pipenvLock); err == nil {
+		return LockfilePipenv, pipenvLock
+	}
+
+	// Python requirements files (not technically lockfiles but provide version info)
+	requirementsTxt := filepath.Join(projectPath, "requirements.txt")
+	if _, err := os.Stat(requirementsTxt); err == nil {
+		return LockfilePip, requirementsTxt
+	}
+
 	return LockfileNone, ""
 }
 
@@ -66,6 +89,12 @@ func ParseLockfile(lockfilePath string, lockType LockfileType) (*Lockfile, error
 		return parsePnpmLock(lockfilePath)
 	case LockfileNPM:
 		return parseNPMLock(lockfilePath)
+	case LockfilePoetry:
+		return parsePoetryLock(lockfilePath)
+	case LockfilePipenv:
+		return parsePipenvLock(lockfilePath)
+	case LockfilePip:
+		return parseRequirementsTxt(lockfilePath)
 	default:
 		return nil, fmt.Errorf("unknown lockfile type")
 	}
@@ -483,7 +512,143 @@ func LockfileTypeName(t LockfileType) string {
 		return "pnpm-lock.yaml"
 	case LockfileNPM:
 		return "package-lock.json"
+	case LockfilePoetry:
+		return "poetry.lock"
+	case LockfilePipenv:
+		return "Pipfile.lock"
+	case LockfilePip:
+		return "requirements.txt"
 	default:
 		return "none"
 	}
+}
+
+// parsePoetryLock parses poetry.lock
+func parsePoetryLock(lockfilePath string) (*Lockfile, error) {
+	data, err := os.ReadFile(lockfilePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read poetry.lock: %w", err)
+	}
+
+	lockfile := &Lockfile{
+		Type:     LockfilePoetry,
+		Packages: make(map[string]LockedPackage),
+	}
+
+	var poetryData map[string]interface{}
+	if err := toml.Unmarshal(data, &poetryData); err != nil {
+		return nil, fmt.Errorf("failed to parse poetry.lock: %w", err)
+	}
+
+	// Poetry lock format has a "package" array
+	if packages, ok := poetryData["package"].([]interface{}); ok {
+		for _, pkg := range packages {
+			entry, ok := pkg.(map[string]interface{})
+			if !ok {
+				continue
+			}
+
+			name, _ := entry["name"].(string)
+			version, _ := entry["version"].(string)
+			if name != "" && version != "" {
+				key := fmt.Sprintf("%s@%s", name, version)
+				lockfile.Packages[key] = LockedPackage{
+					Name:    name,
+					Version: version,
+				}
+			}
+		}
+	}
+
+	return lockfile, nil
+}
+
+// parsePipenvLock parses Pipfile.lock
+func parsePipenvLock(lockfilePath string) (*Lockfile, error) {
+	data, err := os.ReadFile(lockfilePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read Pipfile.lock: %w", err)
+	}
+
+	lockfile := &Lockfile{
+		Type:     LockfilePipenv,
+		Packages: make(map[string]LockedPackage),
+	}
+
+	var pipenvData map[string]interface{}
+	if err := json.Unmarshal(data, &pipenvData); err != nil {
+		return nil, fmt.Errorf("failed to parse Pipfile.lock: %w", err)
+	}
+
+	// Pipfile.lock has "default" and "develop" sections
+	for _, section := range []string{"default", "develop"} {
+		if deps, ok := pipenvData[section].(map[string]interface{}); ok {
+			for name, value := range deps {
+				entry, ok := value.(map[string]interface{})
+				if !ok {
+					continue
+				}
+
+				version, _ := entry["version"].(string)
+				if version != "" {
+					// Remove the leading == from version
+					version = strings.TrimPrefix(version, "==")
+					key := fmt.Sprintf("%s@%s", name, version)
+					lockfile.Packages[key] = LockedPackage{
+						Name:    name,
+						Version: version,
+					}
+				}
+			}
+		}
+	}
+
+	return lockfile, nil
+}
+
+// parseRequirementsTxt parses requirements.txt
+func parseRequirementsTxt(lockfilePath string) (*Lockfile, error) {
+	data, err := os.ReadFile(lockfilePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read requirements.txt: %w", err)
+	}
+
+	lockfile := &Lockfile{
+		Type:     LockfilePip,
+		Packages: make(map[string]LockedPackage),
+	}
+
+	content := string(data)
+	lines := strings.Split(content, "\n")
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		
+		// Skip empty lines and comments
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// Parse package name and version
+		parts := strings.Split(line, "==")
+		if len(parts) >= 2 {
+			name := strings.TrimSpace(parts[0])
+			version := strings.TrimSpace(parts[1])
+			key := fmt.Sprintf("%s@%s", name, version)
+			lockfile.Packages[key] = LockedPackage{
+				Name:    name,
+				Version: version,
+			}
+		} else {
+			// Package without pinned version
+			name := strings.TrimSpace(line)
+			key := fmt.Sprintf("%s@latest", name)
+			lockfile.Packages[key] = LockedPackage{
+				Name:    name,
+				Version: "latest",
+			}
+		}
+	}
+
+	return lockfile, nil
 }
