@@ -27,6 +27,8 @@ var (
 	noColor         bool
 	parallelWorkers int
 	failAbove       int
+	sandboxMemory   string
+	sandboxCPU      string
 )
 
 var rootCmd = &cobra.Command{
@@ -564,7 +566,9 @@ func runBatchAnalyze(db *store.Store, packages []*resolver.ResolvedPackage, para
 	resultsCh := make(chan analyzeResult, len(toAnalyze))
 
 	cfg := &sandbox.Config{
-		Timeout: time.Duration(timeout) * time.Second,
+		Timeout:     time.Duration(timeout) * time.Second,
+		MemoryLimit: sandboxMemory,
+		CPULimit:    sandboxCPU,
 	}
 
 	// Spawn worker goroutines
@@ -808,7 +812,9 @@ func runAnalyze(packageArg string) {
 	}
 
 	cfg := &sandbox.Config{
-		Timeout: time.Duration(timeout) * time.Second,
+		Timeout:     time.Duration(timeout) * time.Second,
+		MemoryLimit: sandboxMemory,
+		CPULimit:    sandboxCPU,
 	}
 	sb := sandbox.New(cfg)
 
@@ -1026,10 +1032,14 @@ func init() {
 	scanCmd.Flags().IntVar(&parallelWorkers, "parallel", 4, "Number of packages to analyze concurrently (high values need more Docker resources)")
 	scanCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output results as JSON")
 	scanCmd.Flags().IntVar(&failAbove, "fail-above", -1, "Exit with code 1 if any package exceeds this risk score (disabled by default)")
+	scanCmd.Flags().StringVar(&sandboxMemory, "sandbox-memory", "512m", "Memory limit for sandbox containers (e.g., 512m, 1g)")
+	scanCmd.Flags().StringVar(&sandboxCPU, "sandbox-cpu", "1.0", "CPU limit for sandbox containers (e.g., 1.0, 2.0)")
 
 	// Analyze flags
 	analyzeCmd.Flags().IntVarP(&timeout, "timeout", "t", 60, "Analysis timeout in seconds")
 	analyzeCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output results as JSON")
+	analyzeCmd.Flags().StringVar(&sandboxMemory, "sandbox-memory", "512m", "Memory limit for sandbox containers (e.g., 512m, 1g)")
+	analyzeCmd.Flags().StringVar(&sandboxCPU, "sandbox-cpu", "1.0", "CPU limit for sandbox containers (e.g., 1.0, 2.0)")
 
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(scanCmd)
