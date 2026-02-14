@@ -428,6 +428,48 @@ grep -r '/etc/passwd\|/etc/shadow\|\.ssh/\|\.aws/\|\.pythonrc' . --include="*.py
 echo "--- NETWORK_ACCESS ---"
 grep -r 'requests\|urllib\|socket\|http' . --include="*.py" 2>/dev/null | head -10 || true
 
+echo "--- VENV_MANIPULATION ---"
+grep -r 'venv\|virtualenv\|site-packages\|sys.prefix\|sys.exec_prefix\|VIRTUAL_ENV' . --include="*.py" 2>/dev/null | head -10 || true
+
+echo "--- PATH_MANIPULATION ---"
+grep -r 'sys.path\|PYTHONPATH\|site.addsitedir\|site.addpackage' . --include="*.py" 2>/dev/null | head -10 || true
+
+echo "--- DYNAMIC_IMPORT ---"
+grep -r '__import__\|importlib\|imp.load_source\|imp.load_module\|pkgutil.iter_modules\|pkgutil.find_loader' . --include="*.py" 2>/dev/null | head -10 || true
+
+echo "--- IMPORT_HIJACKING ---"
+grep -r 'sys.modules' . --include="*.py" 2>/dev/null | head -10 || true
+
+echo "--- PIP_INSTALLATION ---"
+grep -r 'pip install\|python -m pip\|subprocess.*pip\|os.system.*pip' . --include="*.py" 2>/dev/null | head -10 || true
+
+echo "--- CONFIG_MODIFICATION ---"
+grep -r 'pythonrc\|sitecustomize\|usercustomize\|pyvenv.cfg\|\.pth\|setup.cfg' . --include="*.py" 2>/dev/null | head -10 || true
+
+echo "--- CRYPTOGRAPHY_USAGE ---"
+grep -r 'cryptography\|Crypto\|pycryptodome\|pycrypto\|hashlib\|secrets\|ssl\|OpenSSL' . --include="*.py" 2>/dev/null | head -10 || true
+
+echo "--- DEBUGGER_DETECTION ---"
+grep -r 'sys.gettrace\|sys._getframe\|traceback\|pdb\|pydevd\|pycharm\|vscode\|docker\|vbox\|vmware\|virtualbox' . --include="*.py" 2>/dev/null | head -10 || true
+
+echo "--- WINDOWS_REGISTRY ---"
+grep -r 'winreg\|win32api\|win32con\|win32service\|win32process\|HKEY_\|RegOpenKey\|RegSetValue' . --include="*.py" 2>/dev/null | head -10 || true
+
+echo "--- PROCESS_INJECTION ---"
+grep -r 'ctypes.windll.kernel32\|ctypes.windll.kernelbase\|CreateProcess\|WriteProcessMemory\|ReadProcessMemory\|VirtualAllocEx\|VirtualFreeEx\|OpenProcess\|TerminateProcess' . --include="*.py" 2>/dev/null | head -10 || true
+
+echo "--- INPUT_CONTROL ---"
+grep -r 'pynput\|pyautogui\|keyboard\|mouse\|win32api.keybd_event\|win32api.mouse_event\|SendInput' . --include="*.py" 2>/dev/null | head -10 || true
+
+echo "--- SYSTEM_INFO ---"
+grep -r 'platform\|psutil\|socket.gethostname\|socket.gethostbyname\|uuid.getnode\|os.uname\|os.cpu_count\|shutil.disk_usage\|platform.machine\|platform.processor' . --include="*.py" 2>/dev/null | head -10 || true
+
+echo "--- FILE_ENCRYPTION ---"
+grep -r 'encrypt\|decrypt\|AES\|RSA\|DES\|Blowfish\|ChaCha20\|Fernet\|Cipher\|encrypt_file\|decrypt_file' . --include="*.py" 2>/dev/null | head -10 || true
+
+echo "--- MEMORY_OPERATIONS ---"
+grep -r 'ctypes\|ctypes.c_\|ctypes.POINTER\|ctypes.byref\|ctypes.addressof\|ctypes.string_at\|ctypes.memmove\|ctypes.memset' . --include="*.py" 2>/dev/null | head -10 || true
+
 echo "=== END SUSPICIOUS ==="
 
 echo "=== VIGIL PYTHON ANALYSIS END ==="
@@ -522,6 +564,48 @@ func (s *Sandbox) parsePythonOutput(result *ExecutionResult) {
 				continue
 			case "--- NETWORK_ACCESS ---":
 				suspiciousCategory = "network_access"
+				continue
+			case "--- VENV_MANIPULATION ---":
+				suspiciousCategory = "venv_manipulation"
+				continue
+			case "--- PATH_MANIPULATION ---":
+				suspiciousCategory = "path_manipulation"
+				continue
+			case "--- DYNAMIC_IMPORT ---":
+				suspiciousCategory = "dynamic_import"
+				continue
+			case "--- IMPORT_HIJACKING ---":
+				suspiciousCategory = "import_hijacking"
+				continue
+			case "--- PIP_INSTALLATION ---":
+				suspiciousCategory = "pip_installation"
+				continue
+			case "--- CONFIG_MODIFICATION ---":
+				suspiciousCategory = "config_modification"
+				continue
+			case "--- CRYPTOGRAPHY_USAGE ---":
+				suspiciousCategory = "cryptography_usage"
+				continue
+			case "--- DEBUGGER_DETECTION ---":
+				suspiciousCategory = "debugger_detection"
+				continue
+			case "--- WINDOWS_REGISTRY ---":
+				suspiciousCategory = "windows_registry"
+				continue
+			case "--- PROCESS_INJECTION ---":
+				suspiciousCategory = "process_injection"
+				continue
+			case "--- INPUT_CONTROL ---":
+				suspiciousCategory = "input_control"
+				continue
+			case "--- SYSTEM_INFO ---":
+				suspiciousCategory = "system_info"
+				continue
+			case "--- FILE_ENCRYPTION ---":
+				suspiciousCategory = "file_encryption"
+				continue
+			case "--- MEMORY_OPERATIONS ---":
+				suspiciousCategory = "memory_operations"
 				continue
 			}
 		}
