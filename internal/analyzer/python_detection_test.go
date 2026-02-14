@@ -132,7 +132,6 @@ func TestPythonRiskScoring(t *testing.T) {
 func TestPythonRuleSeverityLevels(t *testing.T) {
 	// Test that Python rules have appropriate severity levels
 	rules := LoadDefaultRules()
-	pythonRules := rules.GetRulesByCategory("python")
 	
 	// Check that critical rules exist
 	criticalRules := rules.GetRulesBySeverity(SeverityCritical)
