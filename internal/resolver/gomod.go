@@ -201,6 +201,7 @@ type GoPackage struct {
 // ParseGoMod parses a go.mod file content and returns package information
 func ParseGoMod(content string) (*GoPackage, error) {
 	var pkg GoPackage
+	pkg.Replace = make(map[string]string) // Initialize the map
 	lines := strings.Split(content, "\n")
 	inRequire := false
 	inReplace := false
@@ -268,6 +269,10 @@ func ParseGoMod(content string) (*GoPackage, error) {
 			if len(parts) >= 3 {
 				old := parts[0]
 				new := parts[2]
+				// Join the rest of the parts for the new value
+				if len(parts) > 3 {
+					new = strings.Join(parts[2:], " ")
+				}
 				pkg.Replace[old] = new
 			}
 			continue
@@ -285,7 +290,12 @@ func ParseGoMod(content string) (*GoPackage, error) {
 		if inExclude {
 			parts := strings.Fields(line)
 			if len(parts) >= 2 {
-				pkg.Exclude = append(pkg.Exclude, parts[0])
+				exclude := parts[0]
+				// Join the rest of the parts for the version
+				if len(parts) > 2 {
+					exclude = strings.Join(parts[0:2], " ")
+				}
+				pkg.Exclude = append(pkg.Exclude, exclude)
 			}
 			continue
 		}

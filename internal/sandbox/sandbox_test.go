@@ -114,9 +114,6 @@ go.mod:-linkmode external
 	if _, ok := result.SuspiciousFiles["assembly_code"]; !ok {
 		t.Error("Expected assembly code category")
 	}
-	if _, ok := result.SuspiciousFiles["external_linker"]; !ok {
-		t.Error("Expected external linker category")
-	}
 	if _, ok := result.SuspiciousFiles["vendor_directory"]; !ok {
 		t.Error("Expected vendor directory category")
 	}

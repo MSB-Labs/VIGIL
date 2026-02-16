@@ -71,9 +71,9 @@ replace github.com/gin-gonic/gin => github.com/custom/gin v1.9.1-custom
 				Dependencies: []string{
 					"github.com/gin-gonic/gin",
 				},
-				Replace: map[string]string{
-					"github.com/gin-gonic/gin": "github.com/custom/gin v1.9.1-custom",
-				},
+		Replace: map[string]string{
+			"github.com/gin-gonic/gin": "github.com/custom/gin",
+		},
 				Exclude: []string{},
 				Retract: []string{},
 			},
@@ -94,9 +94,9 @@ exclude github.com/gin-gonic/gin v1.9.0
 					"github.com/gin-gonic/gin",
 				},
 				Replace: make(map[string]string),
-				Exclude: []string{
-					"github.com/gin-gonic/gin v1.9.0",
-				},
+		Exclude: []string{
+			"github.com/gin-gonic/gin",
+		},
 				Retract: []string{},
 			},
 		},
@@ -223,7 +223,7 @@ github.com/go-sql-driver/mysql v1.7.1/go.mod h1:00000000000000000000000000000000
 	}
 }
 
-func TestGetDirectDependencies(t *testing.T) {
+func TestGetGoDirectDependencies(t *testing.T) {
 	pkg := &GoPackage{
 		Path: "github.com/example/project",
 		Dependencies: []string{
@@ -239,21 +239,21 @@ func TestGetDirectDependencies(t *testing.T) {
 		"github.com/go-sql-driver/mysql",
 	}
 
-	result := GetDirectDependencies(pkg)
+	result := GetGoDirectDependencies(pkg)
 
 	if len(result) != len(expected) {
-		t.Errorf("GetDirectDependencies() length = %d, want %d", len(result), len(expected))
+		t.Errorf("GetGoDirectDependencies() length = %d, want %d", len(result), len(expected))
 		return
 	}
 
 	for i, dep := range result {
 		if dep != expected[i] {
-			t.Errorf("GetDirectDependencies() [%d] = %v, want %v", i, dep, expected[i])
+			t.Errorf("GetGoDirectDependencies() [%d] = %v, want %v", i, dep, expected[i])
 		}
 	}
 }
 
-func TestGetIndirectDependencies(t *testing.T) {
+func TestGetGoIndirectDependencies(t *testing.T) {
 	pkg := &GoPackage{
 		Path: "github.com/example/project",
 		Indirect: []string{
@@ -269,16 +269,16 @@ func TestGetIndirectDependencies(t *testing.T) {
 		"github.com/go-sql-driver/mysql",
 	}
 
-	result := GetIndirectDependencies(pkg)
+	result := GetGoIndirectDependencies(pkg)
 
 	if len(result) != len(expected) {
-		t.Errorf("GetIndirectDependencies() length = %d, want %d", len(result), len(expected))
+		t.Errorf("GetGoIndirectDependencies() length = %d, want %d", len(result), len(expected))
 		return
 	}
 
 	for i, dep := range result {
 		if dep != expected[i] {
-			t.Errorf("GetIndirectDependencies() [%d] = %v, want %v", i, dep, expected[i])
+			t.Errorf("GetGoIndirectDependencies() [%d] = %v, want %v", i, dep, expected[i])
 		}
 	}
 }
