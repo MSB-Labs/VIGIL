@@ -71,6 +71,57 @@ func (a *Analyzer) AnalyzeResultWithEcosystem(result *sandbox.ExecutionResult, p
 		envVars = files
 	}
 
+	// For Go packages, also check for Go-specific categories
+	var goSpecificBehaviors []string
+	if ecosystem == "go" {
+		// Add Go-specific suspicious behaviors
+		if files, ok := result.SuspiciousFiles["cgo_usage"]; ok {
+			goSpecificBehaviors = append(goSpecificBehaviors, files...)
+		}
+		if files, ok := result.SuspiciousFiles["native_compilation"]; ok {
+			goSpecificBehaviors = append(goSpecificBehaviors, files...)
+		}
+		if files, ok := result.SuspiciousFiles["module_proxy_usage"]; ok {
+			goSpecificBehaviors = append(goSpecificBehaviors, files...)
+		}
+		if files, ok := result.SuspiciousFiles["build_time_execution"]; ok {
+			goSpecificBehaviors = append(goSpecificBehaviors, files...)
+		}
+		if files, ok := result.SuspiciousFiles["unsafe_package"]; ok {
+			goSpecificBehaviors = append(goSpecificBehaviors, files...)
+		}
+		if files, ok := result.SuspiciousFiles["reflection_heavy"]; ok {
+			goSpecificBehaviors = append(goSpecificBehaviors, files...)
+		}
+		if files, ok := result.SuspiciousFiles["assembly_code"]; ok {
+			goSpecificBehaviors = append(goSpecificBehaviors, files...)
+		}
+		if files, ok := result.SuspiciousFiles["external_linker"]; ok {
+			goSpecificBehaviors = append(goSpecificBehaviors, files...)
+		}
+		if files, ok := result.SuspiciousFiles["vendor_directory"]; ok {
+			goSpecificBehaviors = append(goSpecificBehaviors, files...)
+		}
+		if files, ok := result.SuspiciousFiles["file_embedding"]; ok {
+			goSpecificBehaviors = append(goSpecificBehaviors, files...)
+		}
+		if files, ok := result.SuspiciousFiles["plugin_loading"]; ok {
+			goSpecificBehaviors = append(goSpecificBehaviors, files...)
+		}
+		if files, ok := result.SuspiciousFiles["system_call_heavy"]; ok {
+			goSpecificBehaviors = append(goSpecificBehaviors, files...)
+		}
+		if files, ok := result.SuspiciousFiles["network_activity"]; ok {
+			goSpecificBehaviors = append(goSpecificBehaviors, files...)
+		}
+		if files, ok := result.SuspiciousFiles["file_system_access"]; ok {
+			goSpecificBehaviors = append(goSpecificBehaviors, files...)
+		}
+		if files, ok := result.SuspiciousFiles["environment_access"]; ok {
+			goSpecificBehaviors = append(goSpecificBehaviors, files...)
+		}
+	}
+
 	// Convert sandbox result to behavior data
 	data := &BehaviorData{
 		PackageName:     packageName,
@@ -80,7 +131,7 @@ func (a *Analyzer) AnalyzeResultWithEcosystem(result *sandbox.ExecutionResult, p
 		FileWrites:      result.FilesWritten,
 		EnvVarsRead:     envVars,
 		ShellCommands:   result.Commands,
-		SuspiciousFiles: suspiciousFiles,
+		SuspiciousFiles: append(suspiciousFiles, goSpecificBehaviors...),
 		HasInstallHooks: len(result.Commands) > 0,
 		InstallScripts:  result.Commands,
 	}

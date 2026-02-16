@@ -644,4 +644,272 @@ rules:
           - "ctypes.memmove"
           - "ctypes.memset"
     tags: [python, memory, ctypes]
+
+  # ============================================
+  # GO-SPECIFIC RULES
+  # ============================================
+
+  - id: go-cgo-usage
+    name: "CGO Usage Detected"
+    description: "Go package uses CGO which allows calling C code and can be a security risk"
+    severity: high
+    category: go
+    enabled: true
+    conditions:
+      - type: suspicious
+        operator: contains
+        values:
+          - "CGO_ENABLED=1"
+          - "#cgo"
+          - "_cgo_"
+          - "C.CString"
+          - "C.GoString"
+          - "C.free"
+          - "C.malloc"
+          - "C.sizeof"
+          - "C.ptr"
+    tags: [go, cgo, native]
+
+  - id: go-native-compilation
+    name: "Native Code Compilation"
+    description: "Go package compiles native code which could contain malicious binaries"
+    severity: high
+    category: go
+    enabled: true
+    conditions:
+      - type: file_write
+        operator: matches
+        values:
+          - "\\.a$"
+          - "\\.so$"
+          - "\\.dylib$"
+          - "\\.dll$"
+          - "\\.exe$"
+          - "^/tmp/go-build"
+          - "^/var/folders"
+    tags: [go, native, compilation]
+
+  - id: go-module-proxy-usage
+    name: "Module Proxy Usage"
+    description: "Go package uses custom module proxy which could be compromised"
+    severity: medium
+    category: go
+    enabled: true
+    conditions:
+      - type: suspicious
+        operator: contains
+        values:
+          - "GOPROXY="
+          - "GONOPROXY="
+          - "GOSUMDB="
+          - "GONOSUMDB="
+          - "replace"
+          - "=>"
+    tags: [go, proxy, supply-chain]
+
+  - id: go-build-time-execution
+    name: "Build-time Code Execution"
+    description: "Go package executes code during build time which could be malicious"
+    severity: high
+    category: go
+    enabled: true
+    conditions:
+      - type: suspicious
+        operator: contains
+        values:
+          - "go:build"
+          - "//go:build"
+          - "go:generate"
+          - "//go:generate"
+          - "os/exec"
+          - "exec.Command"
+          - "os.StartProcess"
+          - "syscall"
+          - "runtime"
+    tags: [go, build, execution]
+
+  - id: go-unsafe-package
+    name: "Unsafe Package Usage"
+    description: "Go package uses unsafe package which can bypass Go's memory safety"
+    severity: medium
+    category: go
+    enabled: true
+    conditions:
+      - type: suspicious
+        operator: contains
+        values:
+          - "import \"unsafe\""
+          - "unsafe.Pointer"
+          - "unsafe.Sizeof"
+          - "unsafe.Offsetof"
+          - "unsafe.Alignof"
+    tags: [go, unsafe, memory]
+
+  - id: go-reflection-heavy-usage
+    name: "Heavy Reflection Usage"
+    description: "Go package uses extensive reflection which could be used for malicious purposes"
+    severity: medium
+    category: go
+    enabled: true
+    conditions:
+      - type: suspicious
+        operator: contains
+        values:
+          - "reflect."
+          - "reflect.Value"
+          - "reflect.Type"
+          - "reflect.StructOf"
+          - "reflect.New"
+          - "reflect.Call"
+    tags: [go, reflection, dynamic]
+
+  - id: go-assembly-code
+    name: "Assembly Code Usage"
+    description: "Go package includes assembly code which could contain malicious instructions"
+    severity: high
+    category: go
+    enabled: true
+    conditions:
+      - type: suspicious
+        operator: contains
+        values:
+          - "\\.s$"
+          - "\\.asm$"
+          - "TEXT"
+          - "DATA"
+          - "GLOBL"
+          - "MOVB"
+          - "MOVW"
+          - "MOVL"
+          - "MOVQ"
+    tags: [go, assembly, native]
+
+  - id: go-external-linker
+    name: "External Linker Usage"
+    description: "Go package uses external linker which could introduce malicious code"
+    severity: medium
+    category: go
+    enabled: true
+    conditions:
+      - type: suspicious
+        operator: contains
+        values:
+          - "-linkmode external"
+          - "-extld"
+          - "-extldflags"
+          - "CGO_LDFLAGS"
+          - "LDFLAGS"
+    tags: [go, linker, external]
+
+  - id: go-vendor-directory
+    name: "Vendor Directory Present"
+    description: "Go package includes vendor directory which could contain modified dependencies"
+    severity: medium
+    category: go
+    enabled: true
+    conditions:
+      - type: file_read
+        operator: contains
+        values:
+          - "/vendor/"
+    tags: [go, vendor, dependencies]
+
+  - id: go-embed-directive
+    name: "File Embedding"
+    description: "Go package embeds files which could contain malicious content"
+    severity: medium
+    category: go
+    enabled: true
+    conditions:
+      - type: suspicious
+        operator: contains
+        values:
+          - "//go:embed"
+          - "embed.FS"
+          - "embed.ReadFile"
+          - "embed.ReadDir"
+    tags: [go, embed, files]
+
+  - id: go-plugin-loading
+    name: "Plugin Loading"
+    description: "Go package loads plugins at runtime which could be malicious"
+    severity: high
+    category: go
+    enabled: true
+    conditions:
+      - type: suspicious
+        operator: contains
+        values:
+          - "plugin.Open"
+          - "plugin.Lookup"
+          - ".so"
+          - ".dylib"
+          - ".dll"
+    tags: [go, plugin, dynamic]
+
+  - id: go-system-call-heavy
+    name: "Heavy System Call Usage"
+    description: "Go package makes many system calls which could indicate malicious behavior"
+    severity: medium
+    category: go
+    enabled: true
+    conditions:
+      - type: suspicious
+        operator: contains
+        values:
+          - "syscall."
+          - "os/exec"
+          - "os.StartProcess"
+          - "os.Process"
+          - "os.Kill"
+          - "os.Signal"
+    tags: [go, syscall, system]
+
+  - id: go-network-activity
+    name: "Network Activity During Build"
+    description: "Go package makes network calls during build time"
+    severity: medium
+    category: go
+    enabled: true
+    conditions:
+      - type: network
+        operator: exists
+    tags: [go, network, build]
+
+  - id: go-file-system-access
+    name: "File System Access"
+    description: "Go package accesses sensitive files during build or runtime"
+    severity: medium
+    category: go
+    enabled: true
+    conditions:
+      - type: file_read
+        operator: contains
+        values:
+          - "/etc/passwd"
+          - "/etc/shadow"
+          - ".ssh/"
+          - ".aws/"
+          - ".gitconfig"
+          - "id_rsa"
+    tags: [go, filesystem, sensitive]
+
+  - id: go-environment-access
+    name: "Environment Variable Access"
+    description: "Go package accesses environment variables which could be used for detection"
+    severity: low
+    category: go
+    enabled: true
+    conditions:
+      - type: env
+        operator: contains
+        values:
+          - "os.Getenv"
+          - "os.Setenv"
+          - "os.Environ"
+          - "GOPATH"
+          - "GOROOT"
+          - "GOOS"
+          - "GOARCH"
+    tags: [go, environment, detection]
 `

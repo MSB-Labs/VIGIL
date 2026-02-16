@@ -20,6 +20,7 @@ const (
 	// SandboxImage is the Docker image used for analysis
 	SandboxImage = "vigil-sandbox:latest"
 	SandboxPythonImage = "vigil-python-sandbox:latest"
+	SandboxGoImage = "vigil-go-sandbox:latest"
 
 	// EmbeddedDockerfile is the built-in Dockerfile for the sandbox image
 	EmbeddedDockerfile = `FROM node:20-alpine
@@ -41,6 +42,17 @@ WORKDIR /home/vigil
 USER vigil
 ENV PIP_NO_CACHE_DIR=1
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1
+CMD ["/bin/bash"]
+`
+
+	// EmbeddedGoDockerfile is the built-in Dockerfile for Go sandbox
+	EmbeddedGoDockerfile = `FROM golang:1.21-alpine
+RUN apk add --no-cache bash grep findutils coreutils curl git
+RUN adduser -D -s /bin/bash vigil
+WORKDIR /home/vigil
+USER vigil
+ENV GOPROXY=https://proxy.golang.org,direct
+ENV GOSUMDB=sum.golang.org
 CMD ["/bin/bash"]
 `
 )
@@ -653,6 +665,307 @@ pip show %s 2>/dev/null || echo "Package not found"
 	output := stdout.String()
 	hasRisk := strings.Contains(output, "setup.py") ||
 		strings.Contains(output, "pyproject.toml")
+
+	return hasRisk, output, nil
+}
+
+// GoImageExists checks if the Go sandbox image exists
+func GoImageExists() bool {
+	cmd := exec.Command("docker", "image", "inspect", SandboxGoImage)
+	return cmd.Run() == nil
+}
+
+// BuildGoImage builds the Go sandbox Docker image
+func BuildGoImage(dockerfilePath string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "docker", "build", "-t", SandboxGoImage, "-f", dockerfilePath, ".")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to build Go sandbox image: %w\n%s", err, stderr.String())
+	}
+	return nil
+}
+
+// BuildGoImageFromDefault builds the Go sandbox image using the embedded Dockerfile
+func BuildGoImageFromDefault() error {
+	tmpDir, err := os.MkdirTemp("", "vigil-go-build-*")
+	if err != nil {
+		return fmt.Errorf("failed to create temp directory: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	dockerfilePath := filepath.Join(tmpDir, "Dockerfile")
+	if err := os.WriteFile(dockerfilePath, []byte(EmbeddedGoDockerfile), 0644); err != nil {
+		return fmt.Errorf("failed to write Go Dockerfile: %w", err)
+	}
+
+	return BuildGoImage(dockerfilePath)
+}
+
+// AnalyzeGoPackage runs a Go package in the sandbox and captures behavior
+func (s *Sandbox) AnalyzeGoPackage(modulePath, version string) (*ExecutionResult, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), s.timeout)
+	defer cancel()
+
+	start := time.Now()
+	result := &ExecutionResult{}
+
+	// Create container with the analysis script
+	script := fmt.Sprintf(`
+set -e
+echo "=== VIGIL GO ANALYSIS START ==="
+echo "Module: %s@%s"
+echo "Timestamp: $(date -u +%%Y-%%m-%%dT%%H:%%M:%%SZ)"
+
+# Create temp directory for analysis
+mkdir -p /tmp/go-test
+cd /tmp/go-test
+
+# Initialize a minimal go.mod
+echo 'module test' > go.mod
+echo 'go 1.21' >> go.mod
+echo '' >> go.mod
+echo 'require %s %s' >> go.mod
+
+# Capture network calls using a simple DNS log
+echo "=== MODULE FETCH START ==="
+
+# Fetch the module and capture output
+go mod download %s@%s 2>&1 | tee /tmp/download.log
+
+echo "=== MODULE FETCH END ==="
+
+# Check for go.mod and go.sum
+echo "=== MODULE FILES CHECK ==="
+ls -la go.mod go.sum 2>/dev/null || true
+
+# List files created
+echo "=== FILES CREATED ==="
+find . -type f -name "*.go" | head -50
+
+# Detect suspicious patterns by category
+echo "=== SUSPICIOUS PATTERNS ==="
+
+echo "--- CGO_USAGE ---"
+grep -r 'CGO_ENABLED\|#cgo\|_cgo_\|C\.CString\|C\.GoString\|C\.free\|C\.malloc\|C\.sizeof\|C\.ptr' . --include="*.go" 2>/dev/null | head -10 || true
+
+echo "--- NATIVE_COMPILATION ---"
+find . -name "*.a" -o -name "*.so" -o -name "*.dylib" -o -name "*.dll" -o -name "*.exe" 2>/dev/null | head -10 || true
+
+echo "--- MODULE_PROXY_USAGE ---"
+grep -r 'GOPROXY\|GONOPROXY\|GOSUMDB\|GONOSUMDB\|replace\|=>' . --include="*.go" --include="go.mod" 2>/dev/null | head -10 || true
+
+echo "--- BUILD_TIME_EXECUTION ---"
+grep -r 'go:build\|//go:build\|go:generate\|//go:generate\|os/exec\|exec\.Command\|os\.StartProcess\|syscall\|runtime' . --include="*.go" 2>/dev/null | head -10 || true
+
+echo "--- UNSAFE_PACKAGE ---"
+grep -r 'import "unsafe"\|unsafe\.Pointer\|unsafe\.Sizeof\|unsafe\.Offsetof\|unsafe\.Alignof' . --include="*.go" 2>/dev/null | head -10 || true
+
+echo "--- REFLECTION_HEAVY ---"
+grep -r 'reflect\.\|reflect\.Value\|reflect\.Type\|reflect\.StructOf\|reflect\.New\|reflect\.Call' . --include="*.go" 2>/dev/null | head -10 || true
+
+echo "--- ASSEMBLY_CODE ---"
+find . -name "*.s" -o -name "*.asm" 2>/dev/null | head -10 || true
+
+echo "--- EXTERNAL_LINKER ---"
+grep -r '-linkmode external\|-extld\|-extldflags\|CGO_LDFLAGS\|LDFLAGS' . --include="*.go" --include="go.mod" 2>/dev/null | head -10 || true
+
+echo "--- VENDOR_DIRECTORY ---"
+find . -name "vendor" -type d 2>/dev/null | head -10 || true
+
+echo "--- FILE_EMBEDDING ---"
+grep -r '//go:embed\|embed\.FS\|embed\.ReadFile\|embed\.ReadDir' . --include="*.go" 2>/dev/null | head -10 || true
+
+echo "--- PLUGIN_LOADING ---"
+grep -r 'plugin\.Open\|plugin\.Lookup' . --include="*.go" 2>/dev/null | head -10 || true
+
+echo "--- SYSTEM_CALL_HEAVY ---"
+grep -r 'syscall\.\|os/exec\|os\.StartProcess\|os\.Process\|os\.Kill\|os\.Signal' . --include="*.go" 2>/dev/null | head -10 || true
+
+echo "--- NETWORK_ACTIVITY ---"
+grep -r 'net\.\|http\.\|url\.\|dns' . --include="*.go" 2>/dev/null | head -10 || true
+
+echo "--- FILE_SYSTEM_ACCESS ---"
+grep -r 'os\.Open\|os\.Create\|os\.Remove\|os\.Rename\|/etc/passwd\|/etc/shadow\|\.ssh/\|\.aws/\|\.gitconfig\|id_rsa' . --include="*.go" 2>/dev/null | head -10 || true
+
+echo "--- ENVIRONMENT_ACCESS ---"
+grep -r 'os\.Getenv\|os\.Setenv\|os\.Environ\|GOPATH\|GOROOT\|GOOS\|GOARCH' . --include="*.go" 2>/dev/null | head -10 || true
+
+echo "=== END SUSPICIOUS ==="
+
+echo "=== VIGIL GO ANALYSIS END ==="
+`, modulePath, version, modulePath, version, modulePath, version)
+
+	// Run container
+	args := []string{
+		"run",
+		"--rm",
+		"--network=bridge", // Allow network for now (to capture calls)
+		"--memory=512m",
+		"--cpus=1.0",
+		"--security-opt=no-new-privileges",
+		SandboxGoImage,
+		"/bin/sh", "-c", script,
+	}
+
+	cmd := exec.CommandContext(ctx, "docker", args...)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	result.Duration = time.Since(start)
+	result.Stdout = stdout.String()
+	result.Stderr = stderr.String()
+
+	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			result.Error = fmt.Errorf("Go analysis timed out after %v", s.timeout)
+		} else {
+			result.Error = err
+		}
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			result.ExitCode = exitErr.ExitCode()
+		} else {
+			result.ExitCode = -1
+		}
+	}
+
+	// Parse output for behavioral indicators
+	s.parseGoOutput(result)
+
+	return result, nil
+}
+
+// parseGoOutput extracts behavioral data from the Go analysis output
+func (s *Sandbox) parseGoOutput(result *ExecutionResult) {
+	lines := strings.Split(result.Stdout, "\n")
+	result.SuspiciousFiles = make(map[string][]string)
+
+	inSection := ""
+	suspiciousCategory := ""
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+
+		// Track sections
+		switch line {
+		case "=== MODULE FILES CHECK ===":
+			inSection = "module_files"
+			continue
+		case "=== FILES CREATED ===":
+			inSection = "files"
+			continue
+		case "=== SUSPICIOUS PATTERNS ===":
+			inSection = "suspicious"
+			continue
+		case "=== END SUSPICIOUS ===":
+			inSection = ""
+			suspiciousCategory = ""
+			continue
+		case "=== MODULE FETCH START ===", "=== MODULE FETCH END ===", "=== VIGIL GO ANALYSIS START ===", "=== VIGIL GO ANALYSIS END ===":
+			inSection = ""
+			continue
+		}
+
+		// Track suspicious subcategories
+		if inSection == "suspicious" {
+			switch line {
+			case "--- CGO_USAGE ---":
+				suspiciousCategory = "cgo_usage"
+				continue
+			case "--- NATIVE_COMPILATION ---":
+				suspiciousCategory = "native_compilation"
+				continue
+			case "--- MODULE_PROXY_USAGE ---":
+				suspiciousCategory = "module_proxy_usage"
+				continue
+			case "--- BUILD_TIME_EXECUTION ---":
+				suspiciousCategory = "build_time_execution"
+				continue
+			case "--- UNSAFE_PACKAGE ---":
+				suspiciousCategory = "unsafe_package"
+				continue
+			case "--- REFLECTION_HEAVY ---":
+				suspiciousCategory = "reflection_heavy"
+				continue
+			case "--- ASSEMBLY_CODE ---":
+				suspiciousCategory = "assembly_code"
+				continue
+			case "--- EXTERNAL_LINKER ---":
+				suspiciousCategory = "external_linker"
+				continue
+			case "--- VENDOR_DIRECTORY ---":
+				suspiciousCategory = "vendor_directory"
+				continue
+			case "--- FILE_EMBEDDING ---":
+				suspiciousCategory = "file_embedding"
+				continue
+			case "--- PLUGIN_LOADING ---":
+				suspiciousCategory = "plugin_loading"
+				continue
+			case "--- SYSTEM_CALL_HEAVY ---":
+				suspiciousCategory = "system_call_heavy"
+				continue
+			case "--- NETWORK_ACTIVITY ---":
+				suspiciousCategory = "network_activity"
+				continue
+			case "--- FILE_SYSTEM_ACCESS ---":
+				suspiciousCategory = "file_system_access"
+				continue
+			case "--- ENVIRONMENT_ACCESS ---":
+				suspiciousCategory = "environment_access"
+				continue
+			}
+		}
+
+		if line == "" {
+			continue
+		}
+
+		switch inSection {
+		case "module_files":
+			if strings.Contains(line, "go.mod") || strings.Contains(line, "go.sum") {
+				result.Commands = append(result.Commands, line)
+			}
+		case "files":
+			result.FilesWritten = append(result.FilesWritten, line)
+		case "suspicious":
+			if suspiciousCategory != "" && strings.HasPrefix(line, ".") {
+				result.SuspiciousFiles[suspiciousCategory] = append(
+					result.SuspiciousFiles[suspiciousCategory], line)
+			}
+		}
+	}
+}
+
+// QuickCheckGo runs a lightweight check for Go packages
+func (s *Sandbox) QuickCheckGo(modulePath, version string) (bool, string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Quick check: just fetch module info
+	script := fmt.Sprintf(`
+go list -m -json %s@%s 2>/dev/null || echo "Module not found"
+`, modulePath, version)
+
+	cmd := exec.CommandContext(ctx, "docker", "run", "--rm", "--network=bridge",
+		SandboxGoImage, "/bin/sh", "-c", script)
+
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+
+	if err := cmd.Run(); err != nil {
+		return false, "", err
+	}
+
+	output := stdout.String()
+	hasRisk := strings.Contains(output, "go.mod") ||
+		strings.Contains(output, "go.sum")
 
 	return hasRisk, output, nil
 }
