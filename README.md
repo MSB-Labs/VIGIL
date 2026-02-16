@@ -84,10 +84,11 @@ If a "string formatting" library suddenly tries to read your AWS credentials, VI
 
 ## Features
 
-- **Dependency Resolution** - Parse `package.json` and resolve full dependency trees
+- **Multi-Ecosystem Support** - npm, PyPI, and Go module package managers
+- **Dependency Resolution** - Parse package manifests and resolve full dependency trees
 - **Sandboxed Execution** - Docker-based isolation for safe package analysis
 - **Behavioral Fingerprinting** - Capture and store behavioral profiles
-- **Rule-Based Detection** - 14 YAML-configurable detection rules with severity levels
+- **Rule-Based Detection** - 30+ YAML-configurable detection rules with severity levels
 - **Risk Scoring** - Quantified risk assessment (0-100) with CRITICAL/HIGH/MEDIUM/LOW levels
 - **Batch Analysis** - Analyze all project dependencies in one command (`--analyze`)
 - **JSON Output** - Machine-readable output for CI/CD pipelines (`--json`)
@@ -122,6 +123,8 @@ vigil version
 1. Download `vigil-windows-amd64.exe` from [Releases](https://github.com/MSB-Labs/vigil/releases)
 2. Rename to `vigil.exe`
 3. Add to your PATH or run directly
+
+**Note:** For Go module analysis, ensure Go 1.21+ is installed on your system.
 
 ### Option 2: Go Install
 
@@ -274,6 +277,7 @@ Examples:
   vigil scan . --dev                 Include dev dependencies
   vigil scan . --analyze             Scan and analyze all packages
   vigil scan . --json                Output as JSON for CI/CD
+  vigil scan . --analyze --json      Scan, analyze, and output JSON
 ```
 
 ### Analyze Options
@@ -395,6 +399,8 @@ vigil/
 │   │   ├── resolver_test.go     # Resolver tests
 │   │   ├── npm.go               # npm registry client
 │   │   ├── npm_test.go          # NPM client tests
+│   │   ├── pypi.go              # PyPI registry client
+│   │   ├── gomod.go             # Go module proxy client
 │   │   ├── tree.go              # Dependency tree resolver
 │   │   └── tree_test.go         # Tree tests
 │   ├── sandbox/
@@ -406,7 +412,7 @@ vigil/
 │   │   ├── integration_test.go  # Attack scenario tests
 │   │   ├── rules.go             # Rule parser and matcher
 │   │   ├── rules_test.go        # Rule engine tests
-│   │   └── default_rules.go     # Built-in 14 rules
+│   │   └── default_rules.go     # Built-in 30+ rules
 │   ├── store/
 │   │   ├── store.go             # SQLite fingerprint store
 │   │   └── store_test.go        # Store tests
@@ -435,13 +441,14 @@ Run tests for a specific package:
 go test ./internal/analyzer/... -v
 go test ./internal/resolver/... -v
 go test ./internal/store/... -v
+go test ./internal/sandbox/... -v
 ```
 
 The test suite covers:
 - **Analyzer** - Rule parsing, condition evaluation, risk scoring, attack scenario detection
-- **Resolver** - Package.json parsing, NPM client (mock HTTP), dependency tree
+- **Resolver** - Package.json parsing, NPM client (mock HTTP), dependency tree, Go module support
 - **Store** - SQLite CRUD operations, upsert, queries (temp databases)
-- **Sandbox** - Output parsing, configuration
+- **Sandbox** - Output parsing, configuration, Go-specific sandbox functionality
 - **CLI** - Package argument parsing
 
 ## Roadmap
@@ -453,6 +460,7 @@ The test suite covers:
 - [ ] Pre-built fingerprint database for top packages
 
 ### Phase 3 - Expansion
+- [x] Go module ecosystem support
 - [ ] PyPI ecosystem support
 - [ ] CI/CD integration (GitHub Action)
 - [ ] Hosted service option
